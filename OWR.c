@@ -1,0 +1,20 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "connections.h"
+#include "interface.h"
+
+
+int main(int argc, char *argv[]) 
+{
+    char *myIP, *myTCP;
+    char *regIP = "193.136.138.142"; 
+    char *regUDP = "59000"; 
+
+    interface(argc, argv, &myIP, &myTCP, &regIP, &regUDP);
+
+    mother_of_all_manager(myIP, myTCP, regIP, regUDP);
+    
+
+    return 0;
+}
