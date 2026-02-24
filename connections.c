@@ -4,6 +4,8 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <unistd.h>
+#include <netdb.h>
+
 
 #include "connections.h"
 
@@ -30,9 +32,14 @@
 #define OP_UNREG_RES_OK     4  // Confirmação da remoção 
 
 
+int fd_udp; // Socket UDP global para ser usado em várias funções
+
 void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     int counter, maxfd;
     fd_set rfds;
+
+    char command_arg[4] = {0};
+    int net, id; 
 
     fd_udp=socket(AF_INET,SOCK_DGRAM,0);//UDP socket
     if(fd_udp==-1)/*error*/exit(1);
@@ -40,7 +47,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     maxfd = fd_udp; //sempre maior que o STDIN_FILENO
     
 
-    struct addrinfo *res_udp = udp_starter();
+    struct addrinfo *res_udp = udp_starter(regIP, regUDP);
     
 
     while (1) {
@@ -54,7 +61,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
         if (FD_ISSET(STDIN_FILENO, &rfds)) { // teclado
             char buffer_teclado[256];
-            char command_arg[2] = {0}; 
+            
 
             if (fgets(buffer_teclado, sizeof(buffer_teclado), stdin) != NULL)
             {
@@ -66,10 +73,11 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                     // Verificamos se é "join" OU "j"
                     if (strcmp(command, "join") == 0 || strcmp(command, "j") == 0)
                     {
-                        int net, id;
                         command_arg[0] = 'j';
+                        command_arg[1] = '\0'; // Termina a string 
+
                         if (sscanf(buffer_teclado, "%*s %d %d", &net, &id) == 2) { // get NET and ID
-                            // funcao mae com arg j NET ID
+                            handle_udp_message(command_arg, myIP, myTCP, net, id); // funcao mae com arg j e os argumentos
                         }
                         else {
                             printf("Erro: Argumentos invalidos. Uso: join net id\n");
@@ -79,7 +87,9 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                     // Verificamos se é "leave" OU "l"
                     else if (strcmp(command, "leave") == 0 || strcmp(command, "l") == 0) {
                         command_arg[0] = 'l';
-                        // funcao mae com arg l
+                        command_arg[1] = '\0'; // Termina a string
+
+                        handle_udp_message(command_arg, myIP, myTCP, -1, -1); // funcao mae com arg l
                     }
                     else {
                         printf("Comando desconhecido: %s\n", command);
@@ -97,7 +107,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 }
 
 
-struct addrinfo *udp_starter() { 
+struct addrinfo *udp_starter(char *regIP, char *regUDP) { 
     struct addrinfo hints, *res;
     int errcode;
 
@@ -105,7 +115,7 @@ struct addrinfo *udp_starter() {
     hints.ai_family = AF_INET;      // IPv4
     hints.ai_socktype = SOCK_DGRAM; // UDP socket
 
-    errcode = getaddrinfo("tejo.tecnico.ulisboa.pt", "58001", &hints, &res);
+    errcode = getaddrinfo(regIP, regUDP, &hints, &res);
     if (errcode != 0) /*error*/
         exit(1);
 
@@ -116,9 +126,24 @@ struct addrinfo *udp_starter() {
 
 
 
-void handle_udp_message(char *message, int net, int id) {
-    // Aqui vamos tratar as mensagens recebidas por UDP
-    // Por exemplo, podemos verificar o conteúdo da mensagem e tomar ações específicas
+void handle_udp_message(char *arg, char *myIP, char *myTCP, int net, int id) {
+    char buffer_msg[128];
+    int tid = rand() % 1000; // Gera TID aleatório (0-999) [cite: 328]
+    
+    if (strcmp(arg, "j") == 0) {
+        // Construir mensagem de registo
+        snprintf(buffer_msg, sizeof(buffer_msg), "%s %d %d %d %d %s %s", UDP_REG, tid, OP_REG_REQ, net, id, myIP, myTCP); // Exemplo: "REG TID OP_REG_REQ NET ID IP TCP"
+        // Enviar mensagem para o servidor de registo usando sendto()
+        // Exemplo: sendto(fd_udp, buffer_msg, strlen(buffer_msg), 0, res_udp->ai_addr, res_udp->ai_addrlen);
+        n=sendto(fd_udp, buffer_msg, strlen(buffer_msg), 0, res_udp->ai_addr, res_udp->ai_addrlen);
+        if(n==-1)/*error*/exit(1);
+    }
+    else if (strcmp(arg, "l") == 0) {
+        // Construir mensagem de unregisto
+        snprintf(buffer_msg, sizeof(buffer_msg), "%s %d %d %d %d", UDP_REG, tid, OP_UNREG_REQ, net, id);
+        // Enviar mensagem para o servidor de registo usando sendto()
+        printf("Mensagem de unregisto construída: %s\n", buffer_msg); // Apenas para debug, remover depois
+    }
 }
 
 
