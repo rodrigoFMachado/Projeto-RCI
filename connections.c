@@ -36,15 +36,17 @@ int fd_udp; // Socket UDP global para ser usado em várias funções
 
 
 struct processed_command_{
-    char *command; 
-    int net; 
-    int id;  
+    int tid; // TID aleatório
+    char command[4]; // max 3 letras
+    char net[4]; // max 3 digitos
+    char id[3];  // max 2 digitos
 };
 
 
 void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     int counter, maxfd;
     fd_set rfds;
+
 
     processed_command *command_arg = malloc(sizeof(processed_command)); // Alocar memória para a estrutura
     if(command_arg == NULL) {
@@ -54,6 +56,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
     fd_udp=socket(AF_INET,SOCK_DGRAM,0);//UDP socket
     if(fd_udp==-1)/*error*/exit(1);
+
 
     maxfd = fd_udp; //sempre maior que o STDIN_FILENO
     
@@ -76,14 +79,13 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                 continue; // Se houve um erro no processamento do comando, volta para o início do loop
             }
 
-            send_udp_message(command_arg->command, myIP, myTCP, command_arg->net, command_arg->id, res_udp); 
+            send_udp_message(myIP, myTCP, res_udp, command_arg); 
             
-            free(command_arg->command); 
         }
 
 
-        if (FD_ISSET(fd_udp, &rfds)) { // socket UDP, recebe mensagens do servidor 
-
+        if (FD_ISSET(fd_udp, &rfds)) { // socket UDP, recebe mensagens do servidor
+            receive_udp_message();
         }
         
     }
@@ -92,9 +94,11 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     free(command_arg);
 }
 
+
+
+
 int word_processor(processed_command *arguments) {
     char buffer_teclado[256];
-
 
     if (fgets(buffer_teclado, sizeof(buffer_teclado), stdin) != NULL) {
         char command[32]; // Para guardar a primeira palavra (o comando)
@@ -104,16 +108,16 @@ int word_processor(processed_command *arguments) {
 
             // Verificamos se é "join" OU "j"
             if (strcmp(command, "join") == 0 || strcmp(command, "j") == 0) {
-                arguments->command = strdup("j"); // Armazena o comando abreviado
+                strcpy(arguments->command, "j"); // Armazena o comando abreviado
 
-                if (sscanf(buffer_teclado, "%*s %d %d", &arguments->net, &arguments->id) != 2) {// get NET and ID
+                if (sscanf(buffer_teclado, "%*s %s %s", arguments->net, arguments->id) != 2) {// get NET and ID
                     printf("Erro: Argumentos inválidos. Uso: join net id\n");
                     return 1; // Retorna 1 para indicar erro
                 }
 
             // Verificamos se é "leave" OU "l"
             } else if (strcmp(command, "leave") == 0 || strcmp(command, "l") == 0) {
-                arguments->command = strdup("l"); // Armazena o comando abreviado
+                strcpy(arguments->command, "l"); // Armazena o comando abreviado
                 
                 if (sscanf(buffer_teclado, "%*s") != 0) {// get NET and ID
                     printf("Erro: Argumentos inválidos. Uso: leave \n");
@@ -152,26 +156,39 @@ struct addrinfo *udp_starter(char *regIP, char *regUDP) {
 
 
 
-void send_udp_message(char *arg, char *myIP, char *myTCP, int net, int id, struct addrinfo *res_udp) {
-    char buffer_msg[128];
+void send_udp_message(char *myIP, char *myTCP, struct addrinfo *res_udp, processed_command *arguments) {
+    char udp_message[128];
     int tid = rand() % 1000; // Gera TID aleatório (0-999)
+    int n;
     
-    if (strcmp(arg, "j") == 0) { // join
-        snprintf(buffer_msg, sizeof(buffer_msg), "%s %d %d %d %d %s %s", UDP_REG, tid, OP_REG_REQ, net, id, myIP, myTCP);
-
-        // Exemplo: sendto(fd_udp, buffer_msg, strlen(buffer_msg), 0, res_udp->ai_addr, res_udp->ai_addrlen);
-
-        printf("Mensagem UDP para JOIN: %s\n", buffer_msg); // Apenas para debug, mostrar a mensagem que seria enviada
-    }
-    else if (strcmp(arg, "l") == 0) { // leave
-        snprintf(buffer_msg, sizeof(buffer_msg), "%s %d %d", UDP_REG, tid, OP_UNREG_REQ);
-
-        printf("Mensagem UDP para LEAVE: %s\n", buffer_msg); // Apenas para debug, mostrar a mensagem que seria enviada
+    if (strcmp(arguments->command, "j") == 0) { // join
+        snprintf(udp_message, sizeof(udp_message), "%s %d %d %s %s %s %s", UDP_REG, tid, OP_REG_REQ, arguments->net, arguments->id, myIP, myTCP);
 
     }
+    else if (strcmp(arguments->command, "l") == 0) { // leave
+        snprintf(udp_message, sizeof(udp_message), "%s %d %d %s %s", UDP_REG, tid, OP_UNREG_REQ, arguments->net, arguments->id);
+
+    }
+
+    printf("Enviando mensagem UDP: %s\n", udp_message); // Debug: mostra a mensagem que será enviada
+    n=sendto(fd_udp, udp_message, strlen(udp_message), 0, res_udp->ai_addr, res_udp->ai_addrlen);
+    if(n==-1)/*error*/exit(1);
 }
 
 
+void receive_udp_message() {
+    struct sockaddr addr;
+    socklen_t addrlen;
+    int n;
+    char udp_buffer[128 + 1];
+    addrlen = sizeof(addr);
+    n = recvfrom(fd_udp, udp_buffer, 128, 0, &addr, &addrlen);
+    udp_buffer[n] = '\0';
+
+
+
+    printf("echo: %s\n", udp_buffer);
+}
 
 void handle_tcp_connection() {
     // Aqui vamos tratar as mensagens recebidas por TCP
