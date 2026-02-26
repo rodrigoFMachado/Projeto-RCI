@@ -3,7 +3,6 @@
 
 #include <sys/socket.h>
 
-extern int fd_udp;
 
 typedef struct processed_command_ processed_command; // Estrutura para armazenar o comando processado e seus argumentos
 
