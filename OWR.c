@@ -18,6 +18,6 @@ int main(int argc, char *argv[])
 
     mother_of_all_manager(myIP, myTCP, regIP, regUDP);
     
-
+    
     return 0;
 }
