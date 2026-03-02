@@ -33,7 +33,8 @@
 #define OP_UNREG_RES_OK     4  // Confirmação da remoção 
 
 
-int fd_udp, fd_tcp_listen; // Socket UDP global para ser usado em várias funções
+int fd_udp, fd_tcp_listen; // Sockets e endereços globais
+struct addrinfo *address_udp, *address_tcp; // Endereços globais para UDP e TCP
 
 
 struct processed_command_{
@@ -44,6 +45,7 @@ struct processed_command_{
 
 
 void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
+    struct timeval timeout;
     int counter, maxfd;
     fd_set rfds;
 
@@ -55,28 +57,41 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     }
     
 
-    struct addrinfo *address_udp = udp_starter(regIP, regUDP);
-    struct addrinfo *address_tcp = tcp_starter(myIP, myTCP); 
+    address_udp = udp_starter(regIP, regUDP);
+    address_tcp = tcp_starter(myIP, myTCP); 
 
     maxfd = fd_tcp_listen; // por agora maior que 0
 
 
     while (1) {
+        timeout.tv_sec = 5; timeout.tv_usec = 0; // Timeout de 5 segundos para o select
         FD_ZERO(&rfds);
         FD_SET(STDIN_FILENO, &rfds);
-        FD_SET(fd_tcp_listen, &rfds); // Adiciona o socket TCP à lista de descritores a monitorizar
 
-        counter = select(maxfd + 1, &rfds, (fd_set *)NULL, (fd_set *)NULL, (struct timeval *)NULL);
-        if (counter <= 0) /*error*/
+        counter = select(maxfd + 1, &rfds, (fd_set *)NULL, (fd_set *)NULL, &timeout);
+        if (counter < 0) /*error*/
             exit(1);
+        if (counter == 0)
+            continue;
+
 
         if (FD_ISSET(STDIN_FILENO, &rfds)) { // teclado, envia msg UDP
 
-            if (word_processor(command_arg) != 0) { 
+            int result = word_processor(command_arg);
+            
+            if (result == 1) { 
                 continue; // Se houve um erro no processamento do comando, volta para o início do loop
             }
 
-            send_udp_message(myIP, myTCP, address_udp, command_arg);
+            send_udp_message(myIP, myTCP, command_arg);
+            
+            if (result == 2) { // Se era um comando exit
+                printf("A sair...\n");
+                free(command_arg);
+                close(fd_udp);
+                close(fd_tcp_listen);
+                exit(0);
+            }
         }
 
 
@@ -87,6 +102,10 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     }
 
     free(command_arg);
+    close(fd_udp);
+    close(fd_tcp_listen);
+
+    return;
 }
 
 
@@ -111,6 +130,7 @@ int word_processor(processed_command *arguments) {
                     return 1; // Retorna 1 para indicar erro
                 }
 
+
             // Verificamos se é "leave" OU "l"
             } else if (strcmp(command, "leave") == 0 || strcmp(command, "l") == 0) {
                 strcpy(arguments->command, "l"); // Armazena o comando abreviado
@@ -120,6 +140,23 @@ int word_processor(processed_command *arguments) {
                     return 1; // Retorna 1 para indicar erro
                 }
 
+
+            // Verificamos se é "exit" OU "x"
+            } else if (strcmp(command, "exit") == 0 || strcmp(command, "x") == 0) {
+                if(strcmp(arguments->command, "l") == 0) {
+                    strcpy(arguments->command, "x");
+                    
+                    printf("Comando 'leave' já foi processado, saindo...\n");
+
+                } else {
+                    strcpy(arguments->command, "l"); // Executa leave antes de sair
+
+                    printf("Processando comando 'leave' antes de sair...\n");
+                }
+
+                return 2; // Código especial: processa leave e depois sai
+
+                
             } else {
                 printf("Comando desconhecido: %s\n", command);
                 return 1; // Retorna 1 para indicar erro
@@ -136,7 +173,7 @@ int word_processor(processed_command *arguments) {
 
 
 
-void send_udp_message(char *myIP, char *myTCP, struct addrinfo *address_udp, processed_command *arguments) {
+void send_udp_message(char *myIP, char *myTCP, processed_command *arguments) {
     int n, tid = rand() % 1000; // Gerar um TID aleatório entre 0 e 999
 
     char udp_message[128+1];
@@ -154,6 +191,9 @@ void send_udp_message(char *myIP, char *myTCP, struct addrinfo *address_udp, pro
 
         snprintf(udp_message, sizeof(udp_message), "%s %d %d %s %s", UDP_REG, tid, OP_UNREG_REQ, arguments->net, arguments->id);
 
+    } 
+    else if (strcmp(arguments->command, "x") == 0) {
+        return;
     }
 
 

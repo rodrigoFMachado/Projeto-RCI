@@ -12,7 +12,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP);
 
 int word_processor(processed_command *arguments); // função auxiliar para processar palavras de uma string
 
-void send_udp_message(char *myIP, char *myTCP, struct addrinfo *address_udp, processed_command *arguments);
+void send_udp_message(char *myIP, char *myTCP, processed_command *arguments);
 
 struct addrinfo *udp_starter(char *regIP, char *regUDP);
 
