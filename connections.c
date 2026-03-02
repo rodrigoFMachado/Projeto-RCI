@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <unistd.h>
@@ -52,23 +53,18 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         fprintf(stderr, "Erro ao alocar memória para processed_command\n");
         exit(1);
     }
-
-
-    fd_udp=socket(AF_INET,SOCK_DGRAM,0);//UDP socket
-    if(fd_udp==-1)/*error*/exit(1);
-
-    fd_tcp_listen = socket(AF_INET, SOCK_STREAM, 0); // Socket TCP para escuta
-    if (fd_tcp_listen == -1) /*error*/ exit(1);
-
-    maxfd = fd_udp; //sempre maior que o STDIN_FILENO
     
 
     struct addrinfo *address_udp = udp_starter(regIP, regUDP);
-    
+    struct addrinfo *address_tcp = tcp_starter(myIP, myTCP); 
+
+    maxfd = fd_tcp_listen; // por agora maior que 0
+
 
     while (1) {
         FD_ZERO(&rfds);
         FD_SET(STDIN_FILENO, &rfds);
+        FD_SET(fd_tcp_listen, &rfds); // Adiciona o socket TCP à lista de descritores a monitorizar
 
         counter = select(maxfd + 1, &rfds, (fd_set *)NULL, (fd_set *)NULL, (struct timeval *)NULL);
         if (counter <= 0) /*error*/
@@ -84,8 +80,8 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         }
 
 
-        if (FD_ISSET(fd_udp, &rfds)) { // socket TCP de escuta, recebe mensagens do servidor
-            handle_tcp_connection(); // Função para tratar as mensagens recebidas por TCP
+        if (FD_ISSET(fd_tcp_listen, &rfds)) { // socket TCP de escuta, recebe mensagens do servidor
+            ; // Função para tratar as mensagens recebidas por TCP
         }
         
     }
@@ -111,22 +107,18 @@ int word_processor(processed_command *arguments) {
 
                 if (sscanf(buffer_teclado, "%*s %s %s", arguments->net, arguments->id) != 2) {// get NET and ID 
 
-                    // fazer verificacao de argumentos (net tem de ser numero entre 000 e 999, id tem de ser numero entre 00 e 99)
-
                     printf("Erro: Argumentos inválidos. Uso: join net id\n");
                     return 1; // Retorna 1 para indicar erro
                 }
 
             // Verificamos se é "leave" OU "l"
             } else if (strcmp(command, "leave") == 0 || strcmp(command, "l") == 0) {
-                
                 strcpy(arguments->command, "l"); // Armazena o comando abreviado
                 
                 if (sscanf(buffer_teclado, "%*s") != 0) {
                     printf("Erro: Argumentos inválidos. Uso: leave \n");
                     return 1; // Retorna 1 para indicar erro
                 }
-
 
             } else {
                 printf("Comando desconhecido: %s\n", command);
@@ -186,6 +178,9 @@ struct addrinfo *udp_starter(char *regIP, char *regUDP) {
     struct addrinfo hints, *address;
     int errcode;
 
+    fd_udp=socket(AF_INET,SOCK_DGRAM,0);//UDP socket
+    if(fd_udp==-1)/*error*/exit(1);
+
     memset(&hints, 0, sizeof (hints));
     hints.ai_family = AF_INET;      // IPv4
     hints.ai_socktype = SOCK_DGRAM; // UDP socket
@@ -200,7 +195,27 @@ struct addrinfo *udp_starter(char *regIP, char *regUDP) {
 
 
 
-void handle_tcp_connection() {
-    // Aqui vamos tratar as mensagens recebidas por TCP
-    // Por exemplo, podemos verificar o conteúdo da mensagem e tomar ações específicas
+struct addrinfo *tcp_starter(char *myIP, char *myTCP) {
+    struct addrinfo hints, *address;
+    int errcode;
+
+    fd_tcp_listen = socket(AF_INET, SOCK_STREAM, 0); // Socket TCP para escuta
+    if (fd_tcp_listen == -1) /*error*/ exit(1);
+    
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_INET;       // IPv4
+    hints.ai_socktype = SOCK_STREAM; // TCP socket
+    hints.ai_flags = AI_PASSIVE;
+
+    errcode = getaddrinfo(myIP, myTCP, &hints, &address);
+    if (errcode != 0) /*error*/ exit(1);
+
+    if (bind(fd_tcp_listen, address->ai_addr, address->ai_addrlen) == -1)
+        exit(1);
+
+    if (listen(fd_tcp_listen, 5) == -1) // max 5 pending connections
+        exit(1);
+
+
+    return address;
 }
