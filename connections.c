@@ -5,7 +5,6 @@
 #include <sys/select.h>
 #include <unistd.h>
 #include <netdb.h>
-#include <sys/time.h> // Necessário para o gettimeofday
 
 
 #include "connections.h"
@@ -33,12 +32,10 @@
 #define OP_UNREG_RES_OK     4  // Confirmação da remoção 
 
 
-int fd_udp; // Socket UDP global para ser usado em várias funções
-int index = 0; // Índice global para acessar a estrutura processed_command
+int fd_udp, fd_tcp_listen; // Socket UDP global para ser usado em várias funções
 
 
 struct processed_command_{
-    int tid; // TID aleatório
     char command[4]; // max 3 letras
     char net[4]; // max 3 digitos
     char id[3];  // max 2 digitos
@@ -50,26 +47,28 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     fd_set rfds;
 
 
-    processed_command **command_arg = malloc(sizeof(*processed_command)); // Alocar memória para a estrutura
+    processed_command *command_arg = malloc(sizeof(processed_command)); // Alocar memória para a estrutura
     if(command_arg == NULL) {
         fprintf(stderr, "Erro ao alocar memória para processed_command\n");
         exit(1);
     }
 
+
     fd_udp=socket(AF_INET,SOCK_DGRAM,0);//UDP socket
     if(fd_udp==-1)/*error*/exit(1);
 
+    fd_tcp_listen = socket(AF_INET, SOCK_STREAM, 0); // Socket TCP para escuta
+    if (fd_tcp_listen == -1) /*error*/ exit(1);
 
     maxfd = fd_udp; //sempre maior que o STDIN_FILENO
     
 
-    struct addrinfo *res_udp = udp_starter(regIP, regUDP);
+    struct addrinfo *address_udp = udp_starter(regIP, regUDP);
     
 
     while (1) {
         FD_ZERO(&rfds);
         FD_SET(STDIN_FILENO, &rfds);
-        FD_SET(fd_udp, &rfds);
 
         counter = select(maxfd + 1, &rfds, (fd_set *)NULL, (fd_set *)NULL, (struct timeval *)NULL);
         if (counter <= 0) /*error*/
@@ -81,65 +80,62 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                 continue; // Se houve um erro no processamento do comando, volta para o início do loop
             }
 
-            send_udp_message(myIP, myTCP, res_udp, command_arg); 
-            
+            send_udp_message(myIP, myTCP, address_udp, command_arg);
         }
 
 
-        if (FD_ISSET(fd_udp, &rfds)) { // socket UDP, recebe mensagens do servidor
-            receive_udp_message();
+        if (FD_ISSET(fd_udp, &rfds)) { // socket TCP de escuta, recebe mensagens do servidor
+            handle_tcp_connection(); // Função para tratar as mensagens recebidas por TCP
         }
         
     }
 
-    foreach(command_arg, free); // Libera a memória alocada para a estrutura
     free(command_arg);
 }
 
 
 
 
-int word_processor(processed_command **arguments) {
-    char buffer_teclado[256];
-
-    arguments[index] = malloc(sizeof(processed_command)); // Aloca memória para a estrutura
-    if(arguments[index] == NULL) {
-        fprintf(stderr, "Erro ao alocar memória para processed_command\n");
-        return 1; // Retorna 1 para indicar erro
-    }
-    index++; // Incrementa o índice para a próxima estrutura
+int word_processor(processed_command *arguments) {
+    char buffer_teclado[256] = {0}; // Buffer para ler a linha do teclado
 
     if (fgets(buffer_teclado, sizeof(buffer_teclado), stdin) != NULL) {
-        char command[32]; // Para guardar a primeira palavra (o comando)
+        char command[32] = {0}; // Para guardar a primeira palavra (o comando)
 
         // Lemos apenas a primeira palavra da linha para a variável 'command'
         if (sscanf(buffer_teclado, "%s", command) == 1) {
 
             // Verificamos se é "join" OU "j"
             if (strcmp(command, "join") == 0 || strcmp(command, "j") == 0) {
-                strcpy(arguments[index]->command, "j"); // Armazena o comando abreviado
+                strcpy(arguments->command, "j"); // Armazena o comando abreviado
 
-                if (sscanf(buffer_teclado, "%*s %s %s", arguments[index]->net, arguments[index]->id) != 2) {// get NET and ID
+                if (sscanf(buffer_teclado, "%*s %s %s", arguments->net, arguments->id) != 2) {// get NET and ID 
+
+                    // fazer verificacao de argumentos (net tem de ser numero entre 000 e 999, id tem de ser numero entre 00 e 99)
+
                     printf("Erro: Argumentos inválidos. Uso: join net id\n");
                     return 1; // Retorna 1 para indicar erro
                 }
 
             // Verificamos se é "leave" OU "l"
             } else if (strcmp(command, "leave") == 0 || strcmp(command, "l") == 0) {
-                strcpy(arguments[index]->command, "l"); // Armazena o comando abreviado
                 
-                if (sscanf(buffer_teclado, "%*s") != 0) {// get NET and ID
+                strcpy(arguments->command, "l"); // Armazena o comando abreviado
+                
+                if (sscanf(buffer_teclado, "%*s") != 0) {
                     printf("Erro: Argumentos inválidos. Uso: leave \n");
                     return 1; // Retorna 1 para indicar erro
                 }
 
 
             } else {
-                free(arguments[index]); // Libera a memória alocada para a estrutura em caso de comando desconhecido
-                index--; // Decrementa o índice para não deixar um espaço vazio na estrutura
                 printf("Comando desconhecido: %s\n", command);
                 return 1; // Retorna 1 para indicar erro
             }
+            
+        } else {
+            // Entrada vazia apenas enter
+            return 1; // Retorna 1 para indicar erro
         }
     }
 
@@ -148,68 +144,57 @@ int word_processor(processed_command **arguments) {
 
 
 
-void send_udp_message(char *myIP, char *myTCP, struct addrinfo *res_udp, processed_command **arguments) {
-    char udp_message[128];
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
+void send_udp_message(char *myIP, char *myTCP, struct addrinfo *address_udp, processed_command *arguments) {
+    int n, tid = rand() % 1000; // Gerar um TID aleatório entre 0 e 999
 
-    int n;
-    
+    char udp_message[128+1];
+
+    struct sockaddr addr;
+    socklen_t addrlen;
+
+
     if (strcmp(arguments->command, "j") == 0) { // join
-        arguments[index]->tid = (tv.tv_usec / 1000) % 1000;; // Atribui o TID gerado à estrutura
 
-        snprintf(udp_message, sizeof(udp_message), "%s %d %d %s %s %s %s", UDP_REG, arguments[index]->tid, OP_REG_REQ, arguments->net, arguments->id, myIP, myTCP);
+        snprintf(udp_message, sizeof(udp_message), "%s %d %d %s %s %s %s", UDP_REG, tid, OP_REG_REQ, arguments->net, arguments->id, myIP, myTCP);
 
     }
     else if (strcmp(arguments->command, "l") == 0) { // leave
-        arguments[index]->tid = (tv.tv_usec / 1000) % 1000;; // Atribui o TID gerado à estrutura
 
-        snprintf(udp_message, sizeof(udp_message), "%s %d %d %s %s", UDP_REG, arguments[index]->tid, OP_UNREG_REQ, arguments->net, arguments->id);
+        snprintf(udp_message, sizeof(udp_message), "%s %d %d %s %s", UDP_REG, tid, OP_UNREG_REQ, arguments->net, arguments->id);
 
     }
 
+
     printf("Enviando mensagem UDP: %s\n", udp_message); // Debug: mostra a mensagem que será enviada
-    n=sendto(fd_udp, udp_message, strlen(udp_message), 0, res_udp->ai_addr, res_udp->ai_addrlen);
+
+    n=sendto(fd_udp, udp_message, strlen(udp_message), 0, address_udp->ai_addr, address_udp->ai_addrlen);
     if(n==-1)/*error*/exit(1);
-}
-
-
-void receive_udp_message() {
-    struct sockaddr addr;
-    socklen_t addrlen;
-    char udp_buffer[128 + 1];
-    int n;
 
     addrlen = sizeof(addr);
-    n = recvfrom(fd_udp, udp_buffer, 128, 0, &addr, &addrlen);
-    udp_buffer[n] = '\0';
 
-    // encontrar o tid
-
-
-
-    printf("echo: %s\n", udp_buffer);
+    n = recvfrom(fd_udp, udp_message, 128, 0, &addr, &addrlen);
+    if(n==-1)/*error*/exit(1);
+    udp_message[n] = '\0';
+    
+    printf("echo: %s\n", udp_message); // Debug: mostra a resposta recebida do servidor
 }
-
 
 
 
 
 struct addrinfo *udp_starter(char *regIP, char *regUDP) { 
-    struct addrinfo hints, *res;
+    struct addrinfo hints, *address;
     int errcode;
 
-    memset(&hints, 0, sizeof hints);
+    memset(&hints, 0, sizeof (hints));
     hints.ai_family = AF_INET;      // IPv4
     hints.ai_socktype = SOCK_DGRAM; // UDP socket
 
-    errcode = getaddrinfo(regIP, regUDP, &hints, &res);
-    if (errcode != 0) /*error*/
-        exit(1);
+    errcode = getaddrinfo(regIP, regUDP, &hints, &address);
+    if (errcode != 0) /*error*/ exit(1);
 
-    // sendto, recvfrom
 
-    return res;
+    return address;
 }
 
 

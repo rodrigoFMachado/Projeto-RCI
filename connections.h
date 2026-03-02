@@ -14,6 +14,5 @@ struct addrinfo *udp_starter(char *regIP, char *regUDP);
 
 void send_udp_message(char *myIP, char *myTCP, struct addrinfo *res_udp, processed_command *arguments); // mais args posteriorment
 
-void receive_udp_message(); // função para receber mensagens UDP do servidor
-
+void handle_tcp_connection(); // função para tratar as mensagens recebidas por TCP
 #endif
