@@ -46,13 +46,7 @@ struct NodeState_{
     char *myTCP;
 };
 
-
-
-struct ParsedCommand_{
-    char command[4]; // max 3 letras
-    char net[4]; // max 3 digitos
-    char id[3];  // max 2 digitos
-};
+void send_and_receive(char *udp_message); // função auxiliar para enviar mensagem UDP e esperar pela resposta do servidor
 
 
 void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
@@ -134,88 +128,10 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
 
 
-
-int word_processor(ParsedCommand *current_command) {
-    char buffer_teclado[256] = {0}; // Buffer para ler a linha do teclado
-
-    if (fgets(buffer_teclado, sizeof(buffer_teclado), stdin) != NULL) {
-        char command[32] = {0}; // Para guardar a primeira palavra (o comando)
-
-        // Lemos apenas a primeira palavra da linha para a variável 'command'
-        if (sscanf(buffer_teclado, "%s", command) == 1) {
-
-            // Verificar join OU j
-            if (strcmp(command, "join") == 0 || strcmp(command, "j") == 0) {
-                strcpy(current_command->command, "j"); // Armazena o comando abreviado
-
-                if (sscanf(buffer_teclado, "%*s %s %s", current_command->net, current_command->id) != 2) {// get NET and ID 
-
-                    printf("Erro: Argumentos inválidos. Uso: join net id\n");
-                    return 1; // Retorna 1 para indicar erro
-                }
-            }
-
-            // Verificar leave OU l
-            else if (strcmp(command, "leave") == 0 || strcmp(command, "l") == 0) {
-                strcpy(current_command->command, "l"); // Armazena o comando abreviado
-                
-                if (sscanf(buffer_teclado, "%*s") != 0) {
-                    printf("Erro: Argumentos inválidos. Uso: leave \n");
-                    return 1; // Retorna 1 para indicar erro
-                }
-            }
-
-            // Verificar exit OU x
-            else if (strcmp(command, "exit") == 0 || strcmp(command, "x") == 0) {
-                if(strcmp(current_command->command, "l") == 0) {
-                    strcpy(current_command->command, "x");
-                    
-                    printf("Comando 'leave' já foi processado, saindo...\n");
-
-                } else {
-                    strcpy(current_command->command, "l"); // Executa leave antes de sair
-
-                    printf("Processando comando 'leave' antes de sair...\n");
-                }
-
-                return 2; // Código especial: processa leave e depois sai
-            }
-
-            // Verificar show nodes OU s
-            else if (strcmp(command, "show nodes") == 0 || strcmp(command, "s") == 0) {
-                strcpy(current_command->command, "s"); // Armazena o comando abreviado
-
-                if (sscanf(buffer_teclado, "%*s %s", current_command->net) != 1) {// get ID 
-
-                    printf("Erro: Argumentos inválidos. Uso: show nodes net\n");
-                    return 1; // Retorna 1 para indicar erro
-                }
-            }
-                
-            else {
-                printf("Comando desconhecido: %s\n", command);
-                return 1; // Retorna 1 para indicar erro
-            }  
-        } 
-        
-        else {
-            // Entrada vazia apenas enter
-            return 1; // Retorna 1 para indicar erro
-        }
-    }
-
-    return 0; // Retorna 0 para indicar sucesso
-}
-
-
-
 void send_udp_message(NodeState *my_node, ParsedCommand *current_command) {
-    int n, tid = rand() % 1000; // Gerar um TID aleatório entre 0 e 999
+    int tid = rand() % 1000; // Gerar um TID aleatório entre 0 e 999
 
     char udp_message[128+1];
-
-    struct sockaddr addr;
-    socklen_t addrlen;
 
 
     if (strcmp(current_command->command, "j") == 0) { // join
@@ -227,36 +143,9 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command) {
 
         snprintf(udp_message, sizeof(udp_message), "%s %d %d %s %s %s %s", UDP_REG, tid, OP_REG_REQ, current_command->net, current_command->id, my_node->myIP, my_node->myTCP);
 
-    }
-
-    else if (strcmp(current_command->command, "l") == 0) { // leave
-
-        snprintf(udp_message, sizeof(udp_message), "%s %d %d %s %s", UDP_REG, tid, OP_UNREG_REQ, current_command->net, current_command->id);
-
-    }
-
-    else if (strcmp(current_command->command, "x") == 0) {
-        return;
-    }
+        send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
 
 
-    printf("Enviando mensagem UDP: %s\n", udp_message); // Debug: mostra a mensagem que será enviada
-    n=sendto(fd_udp, udp_message, strlen(udp_message), 0, address_udp->ai_addr, address_udp->ai_addrlen);
-    if(n==-1)/*error*/exit(1);
-
-
-    // Espera de resposta
-    addrlen = sizeof(addr);
-
-    n = recvfrom(fd_udp, udp_message, 128, 0, &addr, &addrlen);
-    if(n==-1)/*error*/exit(1);
-    udp_message[n] = '\0';
-    
-    printf("echo: %s\n", udp_message); // Debug: mostra a resposta recebida do servidor
-
-    //logica para processar a resposta do servidor e atualizar o estado do nó
-    // Comparar string com a resposta esperada para registo bem-sucedido
-    if(strcmp(current_command->command, "j") == 0) {
         char expected_response[128+1];
         snprintf(expected_response, sizeof(expected_response), "%s %d %d %s %s", UDP_REG, tid, OP_REG_RES_OK, current_command->net, current_command->id);
 
@@ -274,9 +163,44 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command) {
         }
     }
 
+    else if (strcmp(current_command->command, "l") == 0) { // leave
+
+        snprintf(udp_message, sizeof(udp_message), "%s %d %d %s %s", UDP_REG, tid, OP_UNREG_REQ, current_command->net, current_command->id);
+
+    }
+
+    else if (strcmp(current_command->command, "n") == 0) { // show nodes
+
+        snprintf(udp_message, sizeof(udp_message), "%s %d %d %s", UDP_NODES, tid, OP_NODES_REQ, current_command->net);
+
+    }
+
+    else if (strcmp(current_command->command, "x") == 0) {
+        return;
+    }
+
 }
 
+void send_and_receive(char *udp_message) {
+    int n;
 
+    struct sockaddr addr;
+    socklen_t addrlen;
+
+    printf("Enviando mensagem UDP: %s\n", udp_message); // Debug: mostra a mensagem que será enviada
+    n=sendto(fd_udp, udp_message, strlen(udp_message), 0, address_udp->ai_addr, address_udp->ai_addrlen);
+    if(n==-1)/*error*/exit(1);
+
+
+    // Espera de resposta
+    addrlen = sizeof(addr);
+
+    n = recvfrom(fd_udp, udp_message, 128, 0, &addr, &addrlen);
+    if(n==-1)/*error*/exit(1);
+    udp_message[n] = '\0';
+    
+    printf("echo: %s\n", udp_message); // Debug: mostra a resposta recebida do servidor
+}
 
 
 struct addrinfo *udp_starter(char *regIP, char *regUDP) { 

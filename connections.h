@@ -4,15 +4,13 @@
 
 #include <netdb.h>
 
+#include "helper.h"
+
 
 typedef struct NodeState_ NodeState; // Estrutura para armazenar o comando processado e seus argumentos
 
-typedef struct ParsedCommand_ ParsedCommand; // Estrutura para armazenar o comando processado e seus argumentos
-
 
 void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP);
-
-int word_processor(ParsedCommand *current_command); // função auxiliar para processar palavras de uma string
 
 void send_udp_message(NodeState *my_node, ParsedCommand *current_command);
 
