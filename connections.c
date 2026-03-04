@@ -158,7 +158,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command) {
                     my_node->net = current_command->net;
                     my_node->id = current_command->id;
 
-                    printf("Registo bem-sucedido na rede %d com ID %d!\n", my_node->);
+                    printf("Registo bem-sucedido na rede %d com ID %d!\n", my_node->net, my_node->id);
 
                 } else if (received_op == OP_REG_RES_FULL) { // Expected: 2
                     printf("Erro: Base de dados cheia. Não foi possível registar o nó.\n");
