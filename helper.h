@@ -4,8 +4,8 @@
 
 typedef struct ParsedCommand_{
     char command[4]; // max 3 letras
-    char net[4]; // max 3 digitos
-    char id[3];  // max 2 digitos
+    int net; // max 3 digitos
+    int id;  // max 2 digitos
 }ParsedCommand;
 
 

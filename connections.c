@@ -39,8 +39,8 @@ struct addrinfo *address_udp, *address_tcp; // Endereços globais para UDP e TCP
 
 struct NodeState_{
     bool is_registered;
-    char net[4]; // max 3 digitos
-    char id[3];  // max 2 digitos
+    int net; // max 3 digitos
+    int id;  // max 2 digitos
 
     char *myIP; // imutavel depois de set
     char *myTCP;
@@ -133,6 +133,8 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command) {
 
     char udp_message[128+1];
 
+    int received_tid;
+    int received_op;
 
     if (strcmp(current_command->command, "j") == 0) { // join
 
@@ -141,37 +143,82 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command) {
             return;
         }
 
-        snprintf(udp_message, sizeof(udp_message), "%s %d %d %s %s %s %s", UDP_REG, tid, OP_REG_REQ, current_command->net, current_command->id, my_node->myIP, my_node->myTCP);
+        snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d %s %s", UDP_REG, tid, OP_REG_REQ, current_command->net, current_command->id, my_node->myIP, my_node->myTCP);
+
 
         send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
 
 
-        char expected_response[128+1];
-        snprintf(expected_response, sizeof(expected_response), "%s %d %d %s %s", UDP_REG, tid, OP_REG_RES_OK, current_command->net, current_command->id);
+        if (sscanf(udp_message, "%*s %d %d", &received_tid, &received_op) >= 2) {
+            if (received_tid == tid) {
 
-        if(strcmp(udp_message, expected_response) == 0) {
-            my_node->is_registered = true;
-            printf("Registo bem-sucedido!\n");
+                if (received_op == OP_REG_RES_OK) { // Expected: 1
+                    my_node->is_registered = true;
 
-            snprintf(expected_response, sizeof(expected_response), "%s %d %d", UDP_REG, tid, OP_REG_RES_FULL);
+                    my_node->net = current_command->net;
+                    my_node->id = current_command->id;
 
-        } else if (strcmp(udp_message, expected_response) == 0) {
-            printf("Erro: Base de dados cheia. Não foi possível registar o nó.\n");
+                    printf("Registo bem-sucedido na rede %d com ID %d!\n", my_node->);
 
-        } else {
-            printf("Erro no registo: Resposta inesperada do servidor.\n");
+                } else if (received_op == OP_REG_RES_FULL) { // Expected: 2
+                    printf("Erro: Base de dados cheia. Não foi possível registar o nó.\n");
+                } 
+                
+                else {
+                    printf("Erro: Resposta inesperada do servidor com op_code: %d\n", received_op);
+                }
+            } 
+            
+            else {
+                printf("Aviso: Recebida resposta com TID diferente.");
+            }
+        } 
+        
+        else {
+            printf("Erro: Formato da resposta UDP inválido ou incompleto.\n");
         }
     }
 
     else if (strcmp(current_command->command, "l") == 0) { // leave
 
-        snprintf(udp_message, sizeof(udp_message), "%s %d %d %s %s", UDP_REG, tid, OP_UNREG_REQ, current_command->net, current_command->id);
+        if(!my_node->is_registered) {
+            printf("Erro: Não está registado. Não pode executar 'leave'.\n");
+            return;
+        }
+
+        snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d", UDP_REG, tid, OP_UNREG_REQ, my_node->net, my_node->id);
+
+        send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
+
+        if (sscanf(udp_message, "%*s %d %d", &received_tid, &received_op) >= 2) {
+            if (received_tid == tid) {
+
+                if (received_op == OP_UNREG_RES_OK) { // Expected: 4
+                    my_node->is_registered = false;
+
+                    printf("Remoção do registo bem-sucedida da rede %d com ID %d!\n", my_node->net, my_node->id);
+                }
+                else {
+                    printf("Erro: Resposta inesperada do servidor com op_code: %d\n", received_op);
+                }
+            }
+            else {
+                printf("Aviso: Recebida resposta com TID diferente.");
+            }
+        }
+
+        else {
+            printf("Erro: Formato da resposta UDP inválido ou incompleto.\n");
+        }
 
     }
 
     else if (strcmp(current_command->command, "n") == 0) { // show nodes
 
-        snprintf(udp_message, sizeof(udp_message), "%s %d %d %s", UDP_NODES, tid, OP_NODES_REQ, current_command->net);
+        snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d", UDP_NODES, tid, OP_NODES_REQ, current_command->net);
+        
+        send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
+
 
     }
 

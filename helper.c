@@ -28,7 +28,7 @@ int word_processor(ParsedCommand *current_command) {
     char buffer_teclado[256] = {0}; // Buffer para ler a linha do teclado
 
     if (fgets(buffer_teclado, sizeof(buffer_teclado), stdin) != NULL) {
-        char command[32] = {0}; // Para guardar a primeira palavra (o comando)
+        char command[32] = {0}; // Para guardar a palavra do comando
 
         // Lemos apenas a primeira palavra da linha para a variável 'command'
         if (sscanf(buffer_teclado, "%s", command) == 1) {
@@ -37,7 +37,7 @@ int word_processor(ParsedCommand *current_command) {
             if (strcmp(command, "join") == 0 || strcmp(command, "j") == 0) {
                 strcpy(current_command->command, "j"); // Armazena o comando abreviado
 
-                if (sscanf(buffer_teclado, "%*s %s %s", current_command->net, current_command->id) != 2) {// get NET and ID 
+                if (sscanf(buffer_teclado, "%*s %d %d", &current_command->net, &current_command->id) != 2) {// get NET and ID 
 
                     printf("Erro: Argumentos inválidos. Uso: join net id\n");
                     return 1; // Retorna 1 para indicar erro
@@ -74,7 +74,7 @@ int word_processor(ParsedCommand *current_command) {
             else if (strcmp(command, "show nodes") == 0 || strcmp(command, "n") == 0) {
                 strcpy(current_command->command, "n"); // Armazena o comando abreviado
 
-                if (sscanf(buffer_teclado, "%*s %s", current_command->net) != 1) {// get ID 
+                if (sscanf(buffer_teclado, "%*s %d", &current_command->net) != 1) {// get ID 
 
                     printf("Erro: Argumentos inválidos. Uso: show nodes net\n");
                     return 1; // Retorna 1 para indicar erro
