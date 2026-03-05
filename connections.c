@@ -97,7 +97,6 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     address_tcp = tcp_starter(myIP, myTCP); 
 
     for (int i = 0; i < 100; i++) fd_edges[i] = -1;
-    for (int i = 0; i < 10; i++) pending_fds[i] = -1; // espera pelo 3 way handshake
 
     while (1) {
         timeout.tv_sec = 5; timeout.tv_usec = 0; // Timeout de 5 segundos para o select
@@ -116,13 +115,6 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
             }
         }
 
-        // 2. Adicionar FDs na Sala de Espera
-        for (int i = 0; i < 10; i++) {
-            if (pending_fds[i] != -1) {
-                FD_SET(pending_fds[i], &rfds);
-                if (pending_fds[i] > maxfd) maxfd = pending_fds[i];
-            }
-        }
 
 
         counter = select(maxfd + 1, &rfds, (fd_set *)NULL, (fd_set *)NULL, &timeout);
@@ -192,57 +184,26 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
             socklen_t addrlen;
             addrlen=sizeof(addr);
             int new_fd = accept(fd_tcp_listen, (struct sockaddr*)&addr, &addrlen);
-            if (new_fd != -1) {
-                // Colocar na sala de espera
-                bool guardado = false;
-                for (int i = 0; i < 10; i++) {
-                    if (pending_fds[i] == -1) {
-                        pending_fds[i] = new_fd;
-                        guardado = true;
-                        break;
-                    }
-                }
-                if (!guardado) { // Sala de espera cheia
-                    close(new_fd);
-                }
-            }
-        }
 
-
-        // ==========================================
-        // C. LER A MENSAGEM "NEIGHBOR id\n" DA SALA DE ESPERA
-        // ==========================================
-        for (int i = 0; i < 10; i++) {
-            if (pending_fds[i] != -1 && FD_ISSET(pending_fds[i], &rfds)) {
-                
-                char buffer[64];
+            char buffer[64];
                 // Lemos os dados. Como o select avisou, o read() é instantâneo!
-                int bytes_read = read(pending_fds[i], buffer, sizeof(buffer) - 1);
+            int bytes_read = read(new_fd, buffer, sizeof(buffer) - 1);
                 
-                if (bytes_read > 0) {
-                    buffer[bytes_read] = '\0';
-                    int vizinho_id;
+            if (bytes_read > 0) {
+                buffer[bytes_read] = '\0';
+                int vizinho_id;
                     
-                    // Verificamos se ele nos disse o ID corretamente
-                    if (sscanf(buffer, "NEIGHBOR %d", &vizinho_id) == 1) {
+                // Verificamos se ele nos disse o ID corretamente
+                if (sscanf(buffer, "NEIGHBOR %d", &vizinho_id) == 1) {
                         
-                        // SUCESSO! Tiramos da sala de espera e pomos no array principal!
-                        fd_edges[vizinho_id] = pending_fds[i];
-                        pending_fds[i] = -1; 
+                    // SUCESSO!
+                    fd_edges[vizinho_id] = new_fd;
                         
-                        printf("Nó %d ligou-se a nós com sucesso!\n", vizinho_id);
-                    } else {
-                        // Mensagem mal formatada, terminamos a ligação (Guião manda)
-                        close(pending_fds[i]);
-                        pending_fds[i] = -1;
-                    }
-                } else {
-                    // O vizinho fechou a ligação antes de falar
-                    close(pending_fds[i]);
-                    pending_fds[i] = -1;
+                    printf("Nó %d ligou-se a nós com sucesso!\n", vizinho_id);
                 }
             }
         }
+
     }
 
     free(current_command);
