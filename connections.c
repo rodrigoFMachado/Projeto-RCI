@@ -68,7 +68,6 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         exit(1);
     }
 
-
     my_node->is_registered = false;
     my_node->myIP = myIP;
     my_node->myTCP = myTCP;
@@ -112,6 +111,8 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
             }
 
             send_udp_message(my_node, current_command);
+            fd_edges[my_node->id] = accept_TCP();
+
             
             if (result == 2) { // Se era um comando exit
                 printf("A sair...\n");
@@ -142,8 +143,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
             }
         
     }
-    //tratar de ver se cada conexão TCP tem msg para ler, se não tiver fechar e reordenar o array para que não 
-    //haja buracos, ou seja, que os fds estejam sempre no início do array e os -1 no final
+    
 
     free(current_command);
     free(my_node);
