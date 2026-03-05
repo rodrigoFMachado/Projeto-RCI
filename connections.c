@@ -36,14 +36,18 @@
 #define OP_UNREG_RES_OK     4  // Confirmação da remoção 
 
 
-int fd_udp, fd_tcp_listen; // Sockets e endereços globais
-int fd_edges[100];// fd de conexões TCP ativas, max 100 conexões
-struct addrinfo *address_udp, *address_tcp; // Endereços globais para UDP e TCP
 
 typedef struct NodeState_{
     bool is_registered;
     int net; 
     int id;
+
+    int dist[100];       // Distância para cada destino (inicia tudo a infinito/999)
+    int succ[100];       // Vizinho de expedição (inicia tudo a -1)
+    bool state[100];      // Estado: 0 (expedição) ou 1 (coordenação)
+    
+    int succ_coord[100]; // Quem causou a minha coordenação
+    int coord[100][100]; // Matriz de coordenação: coord[destino][vizinho] = 1 se o vizinho é coordenador para o destino
 } NodeState;
 
 typedef struct ParsedCommand_{
@@ -52,11 +56,15 @@ typedef struct ParsedCommand_{
     int id;  // max 2 digitos
     int dest;
 
-    char *tempTCP_IP;
-    char *tempTCP_Port;
+    char tempTCP_IP[16]; // Para guardar o IP temporário recebido do servidor para um contacto
+    char tempTCP_Port[6]; // Para guardar o porto temporário recebido do servidor para um contacto
 
 } ParsedCommand;
 
+
+
+int fd_edges[100];// fd de conexões TCP ativas, max 100 conexões
+int pending_fds[10];
 
 
 void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP); 
@@ -84,38 +92,48 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     }
 
     my_node->is_registered = false;
-
     
     address_udp = udp_starter(regIP, regUDP);
     address_tcp = tcp_starter(myIP, myTCP); 
 
-    maxfd = fd_tcp_listen; // por agora maior que 0
-
-    for (int i = 0; i < 100; i++) { // fd nunca é menor que 0, então -1 indica posição livre no array de conexões
-    fd_edges[i] = -1;
-    }
+    for (int i = 0; i < 100; i++) fd_edges[i] = -1;
+    for (int i = 0; i < 10; i++) pending_fds[i] = -1; // espera pelo 3 way handshake
 
     while (1) {
         timeout.tv_sec = 5; timeout.tv_usec = 0; // Timeout de 5 segundos para o select
         FD_ZERO(&rfds);
+
         FD_SET(STDIN_FILENO, &rfds);
         FD_SET(fd_tcp_listen, &rfds);
 
-        for (int n=0; n < 100 && fd_edges[n] != -1; n++) { // Adicionar os fds das conexões TCP ativas ao conjunto de leitura
-            FD_SET(fd_edges[n], &rfds);
-            if (fd_edges[n] > maxfd) {
-                maxfd = fd_edges[n]; // Atualizar maxfd se necessário
+        maxfd = fd_tcp_listen; // conexões podem morrer
+
+        // 1. Adicionar conexões TCP ativas (fd_edges)
+        for (int n = 0; n < 100; n++) { 
+            if (fd_edges[n] != -1) {
+                FD_SET(fd_edges[n], &rfds);
+                if (fd_edges[n] > maxfd) maxfd = fd_edges[n];
+            }
+        }
+
+        // 2. Adicionar FDs na Sala de Espera
+        for (int i = 0; i < 10; i++) {
+            if (pending_fds[i] != -1) {
+                FD_SET(pending_fds[i], &rfds);
+                if (pending_fds[i] > maxfd) maxfd = pending_fds[i];
             }
         }
 
 
         counter = select(maxfd + 1, &rfds, (fd_set *)NULL, (fd_set *)NULL, &timeout);
-        if (counter < 0) /*error*/
-            exit(1);
-        if (counter == 0)
-            continue;
+        if (counter < 0) /*error*/ exit(1);
+        if (counter == 0) continue; // Timeout, volta a esperar
 
 
+
+        // ==========================================
+        // A. TECLADO (Stdin)
+        // ==========================================
         if (FD_ISSET(STDIN_FILENO, &rfds)) { // teclado, envia msg UDP
 
             result = word_processor(my_node, current_command);
@@ -125,7 +143,36 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
             }
 
             send_udp_message(my_node, current_command, myIP, myTCP);
-            fd_edges[my_node->id] = accept_TCP();
+
+            if (strcmp(current_command->command, "a") == 0) {
+                // 1. Criar o socket de saída
+                int fd_out = socket(AF_INET, SOCK_STREAM, 0);
+                
+                // 2. Preparar a morada do destino com base no que recebemos do UDP
+                struct addrinfo hints, *res;
+                memset(&hints, 0, sizeof(hints));
+                hints.ai_family = AF_INET;
+                hints.ai_socktype = SOCK_STREAM;
+                
+                getaddrinfo(current_command->tempTCP_IP, current_command->tempTCP_Port, &hints, &res);
+                
+                // 3. FAZER O CONNECT (Bater à porta do vizinho)
+                if (connect(fd_out, res->ai_addr, res->ai_addrlen) == -1) {
+                    printf("Erro ao conectar ao nó %d.\n", current_command->id);
+                    close(fd_out);
+                } else {
+                    // 4. LIGOU COM SUCESSO! Guardar no nosso array mágico
+                    fd_edges[current_command->id] = fd_out;
+                    
+                    // 5. OBRIGATÓRIO: Dizer "Olá, eu sou o nó X!"
+                    char msg_neighbor[32];
+                    sprintf(msg_neighbor, "NEIGHBOR %02d\n", my_node->id);
+                    write(fd_out, msg_neighbor, strlen(msg_neighbor));
+                    
+                    printf("Aresta criada com sucesso com o nó %d\n", current_command->id);
+                }
+                freeaddrinfo(res);
+            }
 
             
             if (result == 2) { // Se era um comando exit
@@ -135,29 +182,68 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         }
 
 
-        if (FD_ISSET(fd_tcp_listen, &rfds)) { // nova conexão TCP, aceita e guarda o fd
-            if (fd_edges[99] == -1){
-                printf("Aviso: Número máximo de conexões TCP atingido. Nova conexão será recusada.\n");
-                continue; // Recusa novas conexões se o limite for atingido
-            }
-             // Função para tratar as mensagens recebidas por TCP
-            int new_fd = accept(fd_tcp_listen, (struct sockaddr *)NULL, (socklen_t *)NULL);
 
-            if (new_fd == -1) {
-                continue;
-            }
-            
-            for (int edge_index = 0; edge_index < 100; edge_index++) {
-                if (fd_edges[edge_index] == -1) { // Encontrar a primeira posição livre no array de conexões
-                    fd_edges[edge_index] = new_fd;
-                    if (fd_edges[edge_index] > maxfd) {
-                        maxfd =fd_edges[edge_index];
+
+        // ==========================================
+        // B. PEDIDO DE CONEXÃO TCP (fd_tcp_listen)
+        // ==========================================
+        if (FD_ISSET(fd_tcp_listen, &rfds)) {
+            struct sockaddr addr;
+            socklen_t addrlen;
+            addrlen=sizeof(addr);
+            int new_fd = accept(fd_tcp_listen, (struct sockaddr*)&addr, &addrlen);
+            if (new_fd != -1) {
+                // Colocar na sala de espera
+                bool guardado = false;
+                for (int i = 0; i < 10; i++) {
+                    if (pending_fds[i] == -1) {
+                        pending_fds[i] = new_fd;
+                        guardado = true;
+                        break;
                     }
                 }
+                if (!guardado) { // Sala de espera cheia
+                    close(new_fd);
+                }
             }
-        
+        }
+
+
+        // ==========================================
+        // C. LER A MENSAGEM "NEIGHBOR id\n" DA SALA DE ESPERA
+        // ==========================================
+        for (int i = 0; i < 10; i++) {
+            if (pending_fds[i] != -1 && FD_ISSET(pending_fds[i], &rfds)) {
+                
+                char buffer[64];
+                // Lemos os dados. Como o select avisou, o read() é instantâneo!
+                int bytes_read = read(pending_fds[i], buffer, sizeof(buffer) - 1);
+                
+                if (bytes_read > 0) {
+                    buffer[bytes_read] = '\0';
+                    int vizinho_id;
+                    
+                    // Verificamos se ele nos disse o ID corretamente
+                    if (sscanf(buffer, "NEIGHBOR %d", &vizinho_id) == 1) {
+                        
+                        // SUCESSO! Tiramos da sala de espera e pomos no array principal!
+                        fd_edges[vizinho_id] = pending_fds[i];
+                        pending_fds[i] = -1; 
+                        
+                        printf("Nó %d ligou-se a nós com sucesso!\n", vizinho_id);
+                    } else {
+                        // Mensagem mal formatada, terminamos a ligação (Guião manda)
+                        close(pending_fds[i]);
+                        pending_fds[i] = -1;
+                    }
+                } else {
+                    // O vizinho fechou a ligação antes de falar
+                    close(pending_fds[i]);
+                    pending_fds[i] = -1;
+                }
+            }
+        }
     }
-    
 
     free(current_command);
     free(my_node);
@@ -169,7 +255,6 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     close(fd_tcp_listen);
 
     return;
-}
 }
 
 
@@ -229,19 +314,19 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
 
 
             else if(strcmp(command_first_w, "add") == 0) {
-                strcpy(current_command->command, "a");
+                strcpy(current_command->command, "ae");
 
-                if (sscanf(buffer_teclado, "%*s %*s", &current_command->id) !=1) {
+                if (sscanf(buffer_teclado, "%*s %*s %d", &current_command->id) !=1) {
                     printf("Erro: Argumentos inválidos. Uso: add edge id\n");
                     return 1; // Retorna 1 para continuar
                 }
             }
 
-            else if(strcmp(command_first_w, "a") == 0) {
-                strcpy(current_command->command, "a");
+            else if(strcmp(command_first_w, "ae") == 0) {
+                strcpy(current_command->command, "ae");
 
                 if (sscanf(buffer_teclado, "%*s %d", &current_command->id) !=1) {
-                    printf("Erro: Argumentos inválidos. Uso: a edge_id\n");
+                    printf("Erro: Argumentos inválidos. Uso: ae id\n");
                     return 1; // Retorna 1 para continuar
                 }
             }
@@ -362,7 +447,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
                     my_node->net = current_command->net;
                     my_node->id = current_command->id;
 
-                    printf("Registo bem-sucedido na rede %d com ID %d!\n", my_node->net, my_node->id);
+                    printf("Registo bem-sucedido na rede %d com ID %d\n", my_node->net, my_node->id);
 
                 } else if (received_op == OP_REG_RES_FULL) { // Expected: 2
                     printf("Erro: Base de dados cheia. Não foi possível registar o nó.\n");
@@ -375,7 +460,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
         }
     }
 
-    
+
     else if (strcmp(current_command->command, "l") == 0) { // leave
 
         if(!my_node->is_registered) {
@@ -393,7 +478,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
                 if (received_op == OP_UNREG_RES_OK) { // Expected: 4
                     my_node->is_registered = false;
 
-                    printf("Remoção do registo bem-sucedida da rede %d com ID %d!\n", my_node->net, my_node->id);
+                    printf("Remoção do registo bem-sucedida da rede %d com ID %d\n", my_node->net, my_node->id);
                 }
                 else {
                     printf("Erro: Resposta inesperada do servidor com op_code: %d\n", received_op);
@@ -413,7 +498,17 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
     }
 
 
-    else if (strcmp(current_command->command, "a") == 0) { // add edge
+    else if (strcmp(current_command->command, "ae") == 0) { // add edge
+
+        if(!my_node->is_registered) {
+            printf("Erro: Não está registado. Não pode executar 'add'.\n");
+            return;
+        }
+
+        if(current_command->id == my_node->id) {
+            printf("Erro: Não pode criar uma aresta para si mesmo.\n");
+            return;
+        }
 
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d", UDP_CONTACT, tid, OP_CONTACT_REQ, my_node->net, current_command->id);
         
@@ -426,7 +521,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
                     sscanf(udp_message, "%*s %*s %*s %*s %*s %s %s", current_command->tempTCP_IP, current_command->tempTCP_Port);
 
 
-                    printf("Contacto do nó %d recebido com sucesso: %s:%s!\n", current_command->id, current_command->tempTCP_IP, current_command->tempTCP_Port);  
+                    printf("Contacto do nó %d recebido com sucesso: %s:%s\n", current_command->id, current_command->tempTCP_IP, current_command->tempTCP_Port);  
                 } 
                 
                 else if (received_op == OP_CONTACT_NO_REG) { // Expected: 2

@@ -46,7 +46,7 @@ void send_and_receive(char *udp_message) {
     // Espera de resposta
     addrlen = sizeof(addr);
 
-    n = recvfrom(fd_udp, udp_message, 128, 0, &addr, &addrlen);
+    n = recvfrom(fd_udp, udp_message, 128, 0, (struct sockaddr*)&addr, &addrlen);
     if(n==-1)/*error*/exit(1);
     udp_message[n] = '\0';
     
