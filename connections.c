@@ -189,68 +189,65 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
             }
 
 
-
-
-
-
-
-
-
+            
             // Verificar show 
             else if (strcmp(command_first_w, "show") == 0 || strcmp(command_first_w, "n") == 0 
                                 || strcmp(command_first_w, "sg") == 0 || strcmp(command_first_w, "sr") == 0) {
 
-
-
-                                    m
-                if(sscanf(buffer_teclado, "%*s %s", command_second_w) == 1){
-                    if (strcmp(command_second_w, "nodes") == 0 || strcmp(command_first_w, "n") == 0) {
+                if(sscanf(buffer_teclado, "%*s %s", command_second_w) == 1){ // tem de certeza 2 palavras
+                    if (strcmp(command_second_w, "nodes") == 0) {
                         strcpy(current_command->command, "n"); 
 
-                        if(strcmp(command_first_w, "n") == 0) {
-                            if (sscanf(buffer_teclado, "%*s %d", &current_command->net) != 1) {
-                                printf("Erro: Argumentos inválidos. Uso: n net\n");
-                                return 1; // Retorna 1 para continuar
-                            }
-                        } else {
-                            if (sscanf(buffer_teclado, "%*s %*s %d", &current_command->net) != 1) {
-                                printf("Erro: Argumentos inválidos. Uso: show nodes net\n");
-                                return 1; // Retorna 1 para continuar
-                            }
-                        } 
+                        if (sscanf(buffer_teclado, "%*s %*s %d", &current_command->net) != 1) {
+                            printf("Erro: Argumentos inválidos. Uso: show nodes net\n");
+                            return 1; // Retorna 1 para continuar
+                        }
 
-                    } else if (strcmp(command_second_w, "neighbors") == 0 || strcmp(command_first_w, "sg") == 0) {
+                    } else if (strcmp(command_second_w, "neighbors") == 0) {
                         strcpy(current_command->command, "sg");
 
-                        if(strcmp(command_first_w, "sg") == 0) {
-                            if (sscanf(buffer_teclado, "%*s") != 0) {
-                                printf("Erro: Argumentos inválidos. Uso: sg\n");
-                                return 1; // Retorna 1 para continuar
-                            }
-                        } else {
-                            if (sscanf(buffer_teclado, "%*s %*s") != 0) {
-                                printf("Erro: Argumentos inválidos. Uso: show neighbors\n");
-                                return 1; // Retorna 1 para continuar
-                            }
+                        if (sscanf(buffer_teclado, "%*s %*s") != 0) {
+                            printf("Erro: Argumentos inválidos. Uso: show neighbors\n");
+                            return 1; // Retorna 1 para continuar
                         }
 
+                    } else if (strcmp(command_second_w, "routing") == 0) {
+                        strcpy(current_command->command, "sr");
 
-                    } else if (strcmp(command_second_w, "routing") == 0 || strcmp(command_first_w, "sr") == 0) {
-                        strcpy(current_command->command, "sr"); 
-
-                        if(strcmp(command_first_w, "sr") == 0) {
-                            if (sscanf(buffer_teclado, "%*s %d", &current_command->dest) != 1) {
-                                printf("Erro: Argumentos inválidos. Uso: sr dest\n");
-                                return 1; // Retorna 1 para continuar
-                            }
-                        } else {
-                            if (sscanf(buffer_teclado, "%*s %*s %d", &current_command->dest) != 1) {
-                                printf("Erro: Argumentos inválidos. Uso: show routing dest\n");
-                                return 1; // Retorna 1 para continuar
-                            }
+                        if (sscanf(buffer_teclado, "%*s %*s %d", &current_command->dest) != 1) {
+                            printf("Erro: Argumentos inválidos. Uso: show routing dest\n");
+                            return 1; // Retorna 1 para continuar
                         }
+                    } 
+                    // 1 palavra sempre
+                } else if (strcmp(command_first_w, "n") == 0) {
+                    strcpy(current_command->command, "n"); 
+
+                    if (sscanf(buffer_teclado, "%*s %d", &current_command->net) != 1) {
+                        printf("Erro: Argumentos inválidos. Uso: n net\n");
+                        return 1; // Retorna 1 para continuar
+                    }
+                } else if (strcmp(command_first_w, "sg") == 0) {
+                    strcpy(current_command->command, "sg");
+
+                    if (sscanf(buffer_teclado, "%*s") != 0) {
+                        printf("Erro: Argumentos inválidos. Uso: sg\n");
+                        return 1; // Retorna 1 para continuar
+                    }
+                } else if (strcmp(command_first_w, "sr") == 0) {
+                    strcpy(current_command->command, "sr");
+
+                    if (sscanf(buffer_teclado, "%*s %d", &current_command->dest) != 1) {
+                        printf("Erro: Argumentos inválidos. Uso: sr dest\n");
+                        return 1; // Retorna 1 para continuar
                     }
                 }
+
+                else {
+                    printf("Erro: Argumentos inválidos. Uso: show [nodes|neighbors|routing] [net/dest]\n");
+                    return 1; // Retorna 1 para continuar
+                }
+
             } else {
                 printf("Comando desconhecido: %s\n", command_first_w);
                 return 1; // Retorna 1 para indicar erro
