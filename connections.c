@@ -51,6 +51,10 @@ typedef struct ParsedCommand_{
     int net; // max 3 digitos
     int id;  // max 2 digitos
     int dest;
+
+    char *tempTCP_IP;
+    char *tempTCP_Port;
+
 } ParsedCommand;
 
 
@@ -223,6 +227,27 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
             }
 
 
+
+            else if(strcmp(command_first_w, "add") == 0) {
+                strcpy(current_command->command, "a");
+
+                if (sscanf(buffer_teclado, "%*s %*s", &current_command->id) !=1) {
+                    printf("Erro: Argumentos inválidos. Uso: add edge id\n");
+                    return 1; // Retorna 1 para continuar
+                }
+            }
+
+            else if(strcmp(command_first_w, "a") == 0) {
+                strcpy(current_command->command, "a");
+
+                if (sscanf(buffer_teclado, "%*s %d", &current_command->id) !=1) {
+                    printf("Erro: Argumentos inválidos. Uso: a edge_id\n");
+                    return 1; // Retorna 1 para continuar
+                }
+            }
+
+
+
             // show por extenso
             else if (strcmp(command_first_w, "show") == 0) {
 
@@ -346,18 +371,11 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
                 else {
                     printf("Erro: Resposta inesperada do servidor com op_code: %d\n", received_op);
                 }
-            } 
-            
-            else {
-                printf("Aviso: Recebida resposta com TID diferente.");
             }
-        } 
-        
-        else {
-            printf("Erro: Formato da resposta UDP inválido ou incompleto.\n");
         }
     }
 
+    
     else if (strcmp(current_command->command, "l") == 0) { // leave
 
         if(!my_node->is_registered) {
@@ -381,16 +399,9 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
                     printf("Erro: Resposta inesperada do servidor com op_code: %d\n", received_op);
                 }
             }
-            else {
-                printf("Aviso: Recebida resposta com TID diferente.");
-            }
         }
-
-        else {
-            printf("Erro: Formato da resposta UDP inválido ou incompleto.\n");
-        }
-
     }
+
 
     else if (strcmp(current_command->command, "n") == 0) { // show nodes
 
@@ -400,6 +411,36 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
 
 
     }
+
+
+    else if (strcmp(current_command->command, "a") == 0) { // add edge
+
+        snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d", UDP_CONTACT, tid, OP_CONTACT_REQ, my_node->net, current_command->id);
+        
+        send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
+
+        if (sscanf(udp_message, "%*s %d %d", &received_tid, &received_op) >= 2) {
+            if (received_tid == tid) {
+
+                if (received_op == OP_CONTACT_RES) { // Expected: 1
+                    sscanf(udp_message, "%*s %*s %*s %*s %*s %s %s", current_command->tempTCP_IP, current_command->tempTCP_Port);
+
+
+                    printf("Contacto do nó %d recebido com sucesso: %s:%s!\n", current_command->id, current_command->tempTCP_IP, current_command->tempTCP_Port);  
+                } 
+                
+                else if (received_op == OP_CONTACT_NO_REG) { // Expected: 2
+                    printf("Erro: Nó %d não registado. Não foi possível obter o contacto.\n", current_command->id);
+                } 
+                
+                else {
+                    printf("Erro: Resposta inesperada do servidor com op_code: %d\n", received_op);
+                }
+            }
+        }
+
+    }   
+
 
     else if (strcmp(current_command->command, "x") == 0) {
         return;
