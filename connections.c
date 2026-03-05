@@ -34,6 +34,7 @@
 
 
 int fd_udp, fd_tcp_listen; // Sockets e endereços globais
+int fd_edges[100];// fd de conexões TCP ativas, max 100 conexões
 struct addrinfo *address_udp, *address_tcp; // Endereços globais para UDP e TCP
 
 
@@ -77,12 +78,23 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
     maxfd = fd_tcp_listen; // por agora maior que 0
 
+    for (int i = 0; i < 100; i++) { // fd nunca é menor que 0, então -1 indica posição livre no array de conexões
+    fd_edges[i] = -1;
+    }
 
     while (1) {
         timeout.tv_sec = 5; timeout.tv_usec = 0; // Timeout de 5 segundos para o select
         FD_ZERO(&rfds);
         FD_SET(STDIN_FILENO, &rfds);
         FD_SET(fd_tcp_listen, &rfds);
+
+        for (int n=0; n < 100 && fd_edges[n] != -1; n++) { // Adicionar os fds das conexões TCP ativas ao conjunto de leitura
+            FD_SET(fd_edges[n], &rfds);
+            if (fd_edges[n] > maxfd) {
+                maxfd = fd_edges[n]; // Atualizar maxfd se necessário
+            }
+        }
+
 
         counter = select(maxfd + 1, &rfds, (fd_set *)NULL, (fd_set *)NULL, &timeout);
         if (counter < 0) /*error*/
@@ -108,11 +120,30 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         }
 
 
-        if (FD_ISSET(fd_tcp_listen, &rfds)) { // socket TCP de escuta, recebe mensagens do servidor
-            ; // Função para tratar as mensagens recebidas por TCP
-        }
+        if (FD_ISSET(fd_tcp_listen, &rfds)) { // nova conexão TCP, aceita e guarda o fd
+            if (fd_edges[99] == -1){
+                printf("Aviso: Número máximo de conexões TCP atingido. Nova conexão será recusada.\n");
+                continue; // Recusa novas conexões se o limite for atingido
+            }
+             // Função para tratar as mensagens recebidas por TCP
+            int new_fd = accept(fd_tcp_listen, (struct sockaddr *)NULL, (socklen_t *)NULL);
+
+            if (new_fd == -1) {
+                continue;
+            }
+            
+            for (int edge_index = 0; edge_index < 100; edge_index++) {
+                if (fd_edges[edge_index] == -1) { // Encontrar a primeira posição livre no array de conexões
+                    fd_edges[edge_index] = new_fd;
+                    if (fd_edges[edge_index] > maxfd) {
+                        maxfd =fd_edges[edge_index];
+                    }
+                }
+            }
         
     }
+    //tratar de ver se cada conexão TCP tem msg para ler, se não tiver fechar e reordenar o array para que não 
+    //haja buracos, ou seja, que os fds estejam sempre no início do array e os -1 no final
 
     free(current_command);
     free(my_node);
@@ -124,6 +155,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     close(fd_tcp_listen);
 
     return;
+}
 }
 
 
