@@ -1,8 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <netdb.h>
     
 #include "helper.h"
+
+
+int fd_udp, fd_tcp_listen; // Sockets e endereços globais
+
+struct addrinfo *address_udp, *address_tcp; // Endereços globais para UDP e TCP
+
 
 
 int interface(int argc, char *argv[], char **myIP, char **myTCP, char **regIP, char **regUDP) 
@@ -24,74 +31,73 @@ int interface(int argc, char *argv[], char **myIP, char **myTCP, char **regIP, c
 }
 
 
-int word_processor(ParsedCommand *current_command) {
-    char buffer_teclado[256] = {0}; // Buffer para ler a linha do teclado
 
-    if (fgets(buffer_teclado, sizeof(buffer_teclado), stdin) != NULL) {
-        char command[32] = {0}; // Para guardar a palavra do comando
+void send_and_receive(char *udp_message) {
+    int n;
 
-        // Lemos apenas a primeira palavra da linha para a variável 'command'
-        if (sscanf(buffer_teclado, "%s", command) == 1) {
+    struct sockaddr addr;
+    socklen_t addrlen;
 
-            // Verificar join OU j
-            if (strcmp(command, "join") == 0 || strcmp(command, "j") == 0) {
-                strcpy(current_command->command, "j"); // Armazena o comando abreviado
+    printf("Enviando mensagem UDP: %s\n", udp_message); // Debug: mostra a mensagem que será enviada
+    n=sendto(fd_udp, udp_message, strlen(udp_message), 0, address_udp->ai_addr, address_udp->ai_addrlen);
+    if(n==-1)/*error*/exit(1);
 
-                if (sscanf(buffer_teclado, "%*s %d %d", &current_command->net, &current_command->id) != 2) {// get NET and ID 
 
-                    printf("Erro: Argumentos inválidos. Uso: join net id\n");
-                    return 1; // Retorna 1 para indicar erro
-                }
-            }
+    // Espera de resposta
+    addrlen = sizeof(addr);
 
-            // Verificar leave OU l
-            else if (strcmp(command, "leave") == 0 || strcmp(command, "l") == 0) {
-                strcpy(current_command->command, "l"); // Armazena o comando abreviado
-                
-                if (sscanf(buffer_teclado, "%*s") != 0) {
-                    printf("Erro: Argumentos inválidos. Uso: leave \n");
-                    return 1; // Retorna 1 para indicar erro
-                }
-            }
+    n = recvfrom(fd_udp, udp_message, 128, 0, &addr, &addrlen);
+    if(n==-1)/*error*/exit(1);
+    udp_message[n] = '\0';
+    
+    printf("echo: %s\n", udp_message); // Debug: mostra a resposta recebida do servidor
+}
 
-            // Verificar exit OU x
-            else if (strcmp(command, "exit") == 0 || strcmp(command, "x") == 0) {
-                if(strcmp(current_command->command, "l") == 0) {
-                    strcpy(current_command->command, "x");
-                    
-                    printf("Comando 'leave' já foi processado, saindo...\n");
 
-                } else {
-                    strcpy(current_command->command, "l"); // Executa leave antes de sair
 
-                    printf("Processando comando 'leave' antes de sair...\n");
-                }
 
-                return 2; // Código especial: processa leave e depois sai
-            }
+struct addrinfo *udp_starter(char *regIP, char *regUDP) { 
+    struct addrinfo hints, *address;
+    int errcode;
 
-            // Verificar show nodes OU s
-            else if (strcmp(command, "show nodes") == 0 || strcmp(command, "n") == 0) {
-                strcpy(current_command->command, "n"); // Armazena o comando abreviado
+    fd_udp=socket(AF_INET,SOCK_DGRAM,0);//UDP socket
+    if(fd_udp==-1)/*error*/exit(1);
 
-                if (sscanf(buffer_teclado, "%*s %d", &current_command->net) != 1) {// get ID 
+    memset(&hints, 0, sizeof (hints));
+    hints.ai_family = AF_INET;      // IPv4
+    hints.ai_socktype = SOCK_DGRAM; // UDP socket
 
-                    printf("Erro: Argumentos inválidos. Uso: show nodes net\n");
-                    return 1; // Retorna 1 para indicar erro
-                }
-            }
-                
-            else {
-                printf("Comando desconhecido: %s\n", command);
-                return 1; // Retorna 1 para indicar erro
-            }  
-        } 
-        
-        else {
-            // Entrada vazia apenas enter
-            return 1; // Retorna 1 para indicar erro
-        }
-    }
+    errcode = getaddrinfo(regIP, regUDP, &hints, &address);
+    if (errcode != 0) /*error*/ exit(1);
 
-    return 0; // Retorna 0 para indicar sucesso
+
+    return address;
+}
+
+
+
+
+struct addrinfo *tcp_starter(char *myIP, char *myTCP) {
+    struct addrinfo hints, *address;
+    int errcode;
+
+    fd_tcp_listen = socket(AF_INET, SOCK_STREAM, 0); // Socket TCP para escuta
+    if (fd_tcp_listen == -1) /*error*/ exit(1);
+    
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;       // IPv4
+    hints.ai_socktype = SOCK_STREAM; // TCP socket
+    hints.ai_flags = AI_PASSIVE;
+
+    errcode = getaddrinfo(myIP, myTCP, &hints, &address);
+    if (errcode != 0) /*error*/ exit(1);
+
+    if (bind(fd_tcp_listen, address->ai_addr, address->ai_addrlen) == -1)
+        exit(1);
+
+    if (listen(fd_tcp_listen, 5) == -1) // max 5 pending connections
+        exit(1);
+
+
+    return address;
 }

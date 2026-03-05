@@ -2,15 +2,18 @@
 #define INTERFACE_H
 
 
-typedef struct ParsedCommand_{
-    char command[4]; // max 3 letras
-    int net; // max 3 digitos
-    int id;  // max 2 digitos
-}ParsedCommand;
+extern int fd_udp, fd_tcp_listen; // Sockets e endereços globais
+
+extern struct addrinfo *address_udp, *address_tcp; // Endereços globais para UDP e TCP
 
 
 int interface(int argc, char *argv[], char **myIP, char **myTCP, char **regIP, char **regUDP);
 
-int word_processor(ParsedCommand *current_command); // função auxiliar para processar palavras de uma string
+struct addrinfo *udp_starter(char *regIP, char *regUDP); 
+
+struct addrinfo *tcp_starter(char *myIP, char *myTCP);
+
+void send_and_receive(char *udp_message); // função auxiliar para enviar mensagem UDP e esperar pela resposta do servidor
+
 
 #endif

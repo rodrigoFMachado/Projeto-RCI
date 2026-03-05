@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/select.h>
@@ -9,6 +10,8 @@
 
 
 #include "connections.h"
+#include "helper.h"
+
 
 
 // COMANDOS UDP para o servidor
@@ -33,20 +36,26 @@
 #define OP_UNREG_RES_OK     4  // Confirmação da remoção 
 
 
-int fd_udp, fd_tcp_listen; // Sockets e endereços globais
-struct addrinfo *address_udp, *address_tcp; // Endereços globais para UDP e TCP
 
-
-struct NodeState_{
+typedef struct NodeState_{
     bool is_registered;
+    int net; 
+    int id;
+} NodeState;
+
+typedef struct ParsedCommand_{
+    char command[4]; // max 3 letras
     int net; // max 3 digitos
     int id;  // max 2 digitos
+    int dest;
+} ParsedCommand;
 
-    char *myIP; // imutavel depois de set
-    char *myTCP;
-};
 
-void send_and_receive(char *udp_message); // função auxiliar para enviar mensagem UDP e esperar pela resposta do servidor
+
+void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP); 
+
+int word_processor(NodeState *my_node, ParsedCommand *current_command); 
+
 
 
 void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
@@ -69,11 +78,10 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
 
     my_node->is_registered = false;
-    my_node->myIP = myIP;
-    my_node->myTCP = myTCP;
+
     
     address_udp = udp_starter(regIP, regUDP);
-    address_tcp = tcp_starter(my_node); 
+    address_tcp = tcp_starter(myIP, myTCP); 
 
     maxfd = fd_tcp_listen; // por agora maior que 0
 
@@ -93,13 +101,13 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
         if (FD_ISSET(STDIN_FILENO, &rfds)) { // teclado, envia msg UDP
 
-            result = word_processor(current_command);
+            result = word_processor(my_node, current_command);
             
             if (result == 1) { 
                 continue; // Se houve um erro no processamento do comando, volta para o início do loop
             }
 
-            send_udp_message(my_node, current_command);
+            send_udp_message(my_node, current_command, myIP, myTCP);
             
             if (result == 2) { // Se era um comando exit
                 printf("A sair...\n");
@@ -128,7 +136,137 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
 
 
-void send_udp_message(NodeState *my_node, ParsedCommand *current_command) {
+int word_processor(NodeState *my_node, ParsedCommand *current_command) {
+    char buffer_teclado[64] = {0}; // Buffer para ler a linha do teclado
+
+    if (fgets(buffer_teclado, sizeof(buffer_teclado), stdin) != NULL) {
+        char command_first_w[16] = {0}; // Para guardar a primeira palavra do comando
+        char command_second_w[32] = {0}; // Segunda palavra (nem sempre usado)
+
+
+        if (sscanf(buffer_teclado, "%s", command_first_w) == 1) {
+
+
+            // Verificar join OU j
+            if (strcmp(command_first_w, "join") == 0 || strcmp(command_first_w, "j") == 0) {
+                strcpy(current_command->command, "j"); 
+
+                if (sscanf(buffer_teclado, "%*s %d %d", &current_command->net, &current_command->id) != 2) {// get NET and ID 
+
+                    printf("Erro: Argumentos inválidos. Uso: join net id\n");
+                    return 1; // Retorna 1 para continuar
+                }
+            }
+
+
+
+            // Verificar leave OU l
+            else if (strcmp(command_first_w, "leave") == 0 || strcmp(command_first_w, "l") == 0) {
+                strcpy(current_command->command, "l"); 
+                
+                if (sscanf(buffer_teclado, "%*s") != 0) {
+                    printf("Erro: Argumentos inválidos. Uso: leave \n");
+                    return 1; // Retorna 1 para continuar
+                }
+            }
+
+
+
+            // Verificar exit OU x
+            else if (strcmp(command_first_w, "exit") == 0 || strcmp(command_first_w, "x") == 0) {
+                if(my_node->is_registered) {
+                    strcpy(current_command->command, "l"); // Executa leave antes de sair
+
+                    printf("Processando comando 'leave' antes de sair...\n");
+
+                } else {
+                    strcpy(current_command->command, "x");
+                    
+                    printf("Comando 'leave' já foi processado, saindo...\n");
+                }
+
+                return 2; // Código especial: dá sempre break
+            }
+
+
+
+
+
+
+
+
+
+            // Verificar show 
+            else if (strcmp(command_first_w, "show") == 0 || strcmp(command_first_w, "n") == 0 
+                                || strcmp(command_first_w, "sg") == 0 || strcmp(command_first_w, "sr") == 0) {
+
+
+
+                                    m
+                if(sscanf(buffer_teclado, "%*s %s", command_second_w) == 1){
+                    if (strcmp(command_second_w, "nodes") == 0 || strcmp(command_first_w, "n") == 0) {
+                        strcpy(current_command->command, "n"); 
+
+                        if(strcmp(command_first_w, "n") == 0) {
+                            if (sscanf(buffer_teclado, "%*s %d", &current_command->net) != 1) {
+                                printf("Erro: Argumentos inválidos. Uso: n net\n");
+                                return 1; // Retorna 1 para continuar
+                            }
+                        } else {
+                            if (sscanf(buffer_teclado, "%*s %*s %d", &current_command->net) != 1) {
+                                printf("Erro: Argumentos inválidos. Uso: show nodes net\n");
+                                return 1; // Retorna 1 para continuar
+                            }
+                        } 
+
+                    } else if (strcmp(command_second_w, "neighbors") == 0 || strcmp(command_first_w, "sg") == 0) {
+                        strcpy(current_command->command, "sg");
+
+                        if(strcmp(command_first_w, "sg") == 0) {
+                            if (sscanf(buffer_teclado, "%*s") != 0) {
+                                printf("Erro: Argumentos inválidos. Uso: sg\n");
+                                return 1; // Retorna 1 para continuar
+                            }
+                        } else {
+                            if (sscanf(buffer_teclado, "%*s %*s") != 0) {
+                                printf("Erro: Argumentos inválidos. Uso: show neighbors\n");
+                                return 1; // Retorna 1 para continuar
+                            }
+                        }
+
+
+                    } else if (strcmp(command_second_w, "routing") == 0 || strcmp(command_first_w, "sr") == 0) {
+                        strcpy(current_command->command, "sr"); 
+
+                        if(strcmp(command_first_w, "sr") == 0) {
+                            if (sscanf(buffer_teclado, "%*s %d", &current_command->dest) != 1) {
+                                printf("Erro: Argumentos inválidos. Uso: sr dest\n");
+                                return 1; // Retorna 1 para continuar
+                            }
+                        } else {
+                            if (sscanf(buffer_teclado, "%*s %*s %d", &current_command->dest) != 1) {
+                                printf("Erro: Argumentos inválidos. Uso: show routing dest\n");
+                                return 1; // Retorna 1 para continuar
+                            }
+                        }
+                    }
+                }
+            } else {
+                printf("Comando desconhecido: %s\n", command_first_w);
+                return 1; // Retorna 1 para indicar erro
+            }  
+
+        } else {
+            // Entrada vazia apenas enter
+            return 1; // Retorna 1 para indicar erro
+        }
+    }
+    return 0; // Retorna 0 para indicar sucesso
+}
+
+
+
+void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP) {
     int tid = rand() % 1000; // Gerar um TID aleatório entre 0 e 999
 
     char udp_message[128+1];
@@ -143,7 +281,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command) {
             return;
         }
 
-        snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d %s %s", UDP_REG, tid, OP_REG_REQ, current_command->net, current_command->id, my_node->myIP, my_node->myTCP);
+        snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d %s %s", UDP_REG, tid, OP_REG_REQ, current_command->net, current_command->id, myIP, myTCP);
 
 
         send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
@@ -226,72 +364,4 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command) {
         return;
     }
 
-}
-
-void send_and_receive(char *udp_message) {
-    int n;
-
-    struct sockaddr addr;
-    socklen_t addrlen;
-
-    printf("Enviando mensagem UDP: %s\n", udp_message); // Debug: mostra a mensagem que será enviada
-    n=sendto(fd_udp, udp_message, strlen(udp_message), 0, address_udp->ai_addr, address_udp->ai_addrlen);
-    if(n==-1)/*error*/exit(1);
-
-
-    // Espera de resposta
-    addrlen = sizeof(addr);
-
-    n = recvfrom(fd_udp, udp_message, 128, 0, &addr, &addrlen);
-    if(n==-1)/*error*/exit(1);
-    udp_message[n] = '\0';
-    
-    printf("echo: %s\n", udp_message); // Debug: mostra a resposta recebida do servidor
-}
-
-
-struct addrinfo *udp_starter(char *regIP, char *regUDP) { 
-    struct addrinfo hints, *address;
-    int errcode;
-
-    fd_udp=socket(AF_INET,SOCK_DGRAM,0);//UDP socket
-    if(fd_udp==-1)/*error*/exit(1);
-
-    memset(&hints, 0, sizeof (hints));
-    hints.ai_family = AF_INET;      // IPv4
-    hints.ai_socktype = SOCK_DGRAM; // UDP socket
-
-    errcode = getaddrinfo(regIP, regUDP, &hints, &address);
-    if (errcode != 0) /*error*/ exit(1);
-
-
-    return address;
-}
-
-
-
-
-struct addrinfo *tcp_starter(NodeState *my_node) {
-    struct addrinfo hints, *address;
-    int errcode;
-
-    fd_tcp_listen = socket(AF_INET, SOCK_STREAM, 0); // Socket TCP para escuta
-    if (fd_tcp_listen == -1) /*error*/ exit(1);
-    
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;       // IPv4
-    hints.ai_socktype = SOCK_STREAM; // TCP socket
-    hints.ai_flags = AI_PASSIVE;
-
-    errcode = getaddrinfo(my_node->myIP, my_node->myTCP, &hints, &address);
-    if (errcode != 0) /*error*/ exit(1);
-
-    if (bind(fd_tcp_listen, address->ai_addr, address->ai_addrlen) == -1)
-        exit(1);
-
-    if (listen(fd_tcp_listen, 5) == -1) // max 5 pending connections
-        exit(1);
-
-
-    return address;
 }
