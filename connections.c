@@ -133,7 +133,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
             send_udp_message(my_node, current_command, myIP, myTCP);
 
-            if (strcmp(current_command->command, "a") == 0) {
+            if (strcmp(current_command->command, "ae") == 0) {
                 // 1. Criar o socket de saída
                 int fd_out = socket(AF_INET, SOCK_STREAM, 0);
                 
