@@ -91,6 +91,8 @@ void tcp_starter(char *myIP, char *myTCP) {
     if (listen(fd_tcp_listen, 5) == -1) // max 5 pending connections
         exit(1);
 
+    freeaddrinfo(address);
+    
     return;
 }
 
