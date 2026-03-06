@@ -13,7 +13,7 @@ struct addrinfo *udp_starter(char *regIP, char *regUDP);
 
 struct addrinfo *tcp_starter(char *myIP, char *myTCP);
 
-void send_and_receive(char *udp_message); // função auxiliar para enviar mensagem UDP e esperar pela resposta do servidor
+void send_and_receiveUDP(char *udp_message); // função auxiliar para enviar mensagem UDP e esperar pela resposta do servidor
 
 
 #endif

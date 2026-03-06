@@ -411,7 +411,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d %s %s", UDP_REG, tid, OP_REG_REQ, current_command->net, current_command->id, myIP, myTCP);
 
 
-        send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
+        send_and_receiveUDP(udp_message); // Envia a mensagem e espera pela resposta do servidor
 
 
         if (sscanf(udp_message, "%*s %d %d", &received_tid, &received_op) >= 2) {
@@ -446,7 +446,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
 
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d", UDP_REG, tid, OP_UNREG_REQ, my_node->net, my_node->id);
 
-        send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
+        send_and_receiveUDP(udp_message); // Envia a mensagem e espera pela resposta do servidor
 
         if (sscanf(udp_message, "%*s %d %d", &received_tid, &received_op) >= 2) {
             if (received_tid == tid) {
@@ -468,7 +468,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
 
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d", UDP_NODES, tid, OP_NODES_REQ, current_command->net);
         
-        send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
+        send_and_receiveUDP(udp_message); // Envia a mensagem e espera pela resposta do servidor
 
 
     }
@@ -488,7 +488,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
 
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d", UDP_CONTACT, tid, OP_CONTACT_REQ, my_node->net, current_command->id);
         
-        send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
+        send_and_receiveUDP(udp_message); // Envia a mensagem e espera pela resposta do servidor
 
         if (sscanf(udp_message, "%*s %d %d", &received_tid, &received_op) >= 2) {
             if (received_tid == tid) {

@@ -32,7 +32,7 @@ int interface(int argc, char *argv[], char **myIP, char **myTCP, char **regIP, c
 
 
 
-void send_and_receive(char *udp_message) {
+void send_and_receiveUDP(char *udp_message) {
     int n;
 
     struct sockaddr addr;
@@ -101,3 +101,4 @@ struct addrinfo *tcp_starter(char *myIP, char *myTCP) {
 
     return address;
 }
+
