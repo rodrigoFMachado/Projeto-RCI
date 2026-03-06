@@ -63,9 +63,6 @@ typedef struct ParsedCommand_{
 
 
 
-int fd_edges[100];// fd de conexões TCP ativas, max 100 conexões
-int pending_fds[10];
-
 
 void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP); 
 

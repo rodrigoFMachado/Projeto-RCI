@@ -3,7 +3,7 @@
 
 
 extern int fd_udp, fd_tcp_listen; // Sockets e endereços globais
-
+extern int fd_edges[100]; // fd de conexões TCP ativas, max 100 conexões
 extern struct addrinfo *address_udp, *address_tcp; // Endereços globais para UDP e TCP
 
 
