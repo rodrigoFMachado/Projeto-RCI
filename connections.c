@@ -68,7 +68,9 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
 
 int word_processor(NodeState *my_node, ParsedCommand *current_command); 
 
-void connector(NodeState *my_node, ParsedCommand *current_command,int operation);
+void connect_to_node(NodeState *my_node, ParsedCommand *current_command);
+
+void accept_connection(void);
 
 
 
@@ -91,12 +93,13 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     }
 
     my_node->is_registered = false;
-    
+
+    current_command->tempTCP_IP[0] = '\0';
+
     address_udp = udp_starter(regIP, regUDP);
     tcp_starter(myIP, myTCP); 
 
     for (int i = 0; i < 100; i++) fd_edges[i] = -1;
-    int request; // Variável para controlar se é pedido ou aceitação de aresta
 
     while (1) {
         timeout.tv_sec = 5; timeout.tv_usec = 0; // Timeout de 5 segundos para o select
@@ -142,9 +145,10 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                 break;
             }
 
-            if (strcmp(current_command->command, "ae") == 0) {
-                request=1; //contrala se é para aceitar ou pedir add edge aceitar=0,pedir=1
-                connector(my_node, current_command, request);
+            if (strcmp(current_command->command, "ae") == 0 && current_command->tempTCP_IP[0] != '\0') {
+                
+                connect_to_node(my_node, current_command);
+
             }else if(strcmp(current_command->command, "sg") == 0){
                 // usamos a estrutura local de fd_edges para mostrar as ligações ativas
                 // index de fd_edges com alguma coisa diferente de -1 é um vizinho ativo
@@ -167,8 +171,9 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         // B. PEDIDO DE CONEXÃO TCP (fd_tcp_listen)
         // ==========================================
         if (FD_ISSET(fd_tcp_listen, &rfds)) {
-            request=0; //contrala se é para aceitar ou pedir add edge aceitar=0,pedir=1
-            connector(my_node, current_command, request);
+
+            accept_connection();
+
         }
 
     }
@@ -234,12 +239,9 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
                 if(my_node->is_registered) {
                     strcpy(current_command->command, "l"); // Executa leave antes de sair
 
-                    printf("Processando comando 'leave' antes de sair...\n");
-
                 } else {
                     strcpy(current_command->command, "x");
                     
-                    printf("Comando 'leave' já foi processado, saindo...\n");
                 }
 
                 return 2; // Código especial: dá sempre break
@@ -417,7 +419,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
                 if (received_op == OP_UNREG_RES_OK) { // Expected: 4
                     my_node->is_registered = false;
 
-                    printf("Remoção do bem-sucedida do nó %d da rede %d", my_node->id, my_node->net);
+                    printf("Remoção do bem-sucedida do nó %d da rede %d\n", my_node->id, my_node->net);
                 }
                 else {
                     printf("Erro: Resposta inesperada do servidor.");
@@ -471,9 +473,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
 
                 if (received_op == OP_CONTACT_RES) { // Expected: 1
                     sscanf(udp_message, "%*s %*s %*s %*s %*s %s %s", current_command->tempTCP_IP, current_command->tempTCP_Port);
-
-
-                    printf("Contacto do nó %d recebido com sucesso: %s:%s\n", current_command->id, current_command->tempTCP_IP, current_command->tempTCP_Port);  
+                    // em caso de sucesso tenta fazer a conexão TCP
                 } 
                 
                 else if (received_op == OP_CONTACT_NO_REG) { // Expected: 2
@@ -493,68 +493,70 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
         return;
     }
 
+    return;
+
 }
 
-void connector(NodeState *my_node, ParsedCommand *current_command,int operation) {
-    // NOTA: É PRECISO MAIS HANDLING DE ERROS.
-    if (operation==1) { // Pedir aresta
 
-        int fd_out = socket(AF_INET, SOCK_STREAM, 0);
+
+void connect_to_node(NodeState *my_node, ParsedCommand *current_command) {
+    int fd_out = socket(AF_INET, SOCK_STREAM, 0);
+    
+    // 2. Preparar a morada do destino com base no que recebemos do UDP
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    
+    getaddrinfo(current_command->tempTCP_IP, current_command->tempTCP_Port, &hints, &res);
+    
+    // 3. FAZER O CONNECT (Bater à porta do vizinho)
+    if (connect(fd_out, res->ai_addr, res->ai_addrlen) == -1) {
+        printf("Erro ao conectar ao nó %d.\n", current_command->id);
+        close(fd_out);
+    } else {
+        // 4. LIGOU COM SUCESSO! Guardar no nosso array mágico
+        fd_edges[current_command->id] = fd_out;
         
-        // 2. Preparar a morada do destino com base no que recebemos do UDP
-        struct addrinfo hints, *res;
-        memset(&hints, 0, sizeof(hints));
-        hints.ai_family = AF_INET;
-        hints.ai_socktype = SOCK_STREAM;
+        // 5. OBRIGATÓRIO: Dizer "Olá, eu sou o nó X!"
+        char msg_neighbor[32];
+        sprintf(msg_neighbor, "NEIGHBOR %02d\n", my_node->id);
+        write(fd_out, msg_neighbor, strlen(msg_neighbor));
         
-        getaddrinfo(current_command->tempTCP_IP, current_command->tempTCP_Port, &hints, &res);
-        
-        // 3. FAZER O CONNECT (Bater à porta do vizinho)
-        if (connect(fd_out, res->ai_addr, res->ai_addrlen) == -1) {
-            printf("Erro ao conectar ao nó %d.\n", current_command->id);
-            close(fd_out);
-        } else {
-            // 4. LIGOU COM SUCESSO! Guardar no nosso array mágico
-            fd_edges[current_command->id] = fd_out;
+        printf("Aresta criada com sucesso com o nó %d\n", current_command->id);
+    }
+
+    freeaddrinfo(res);
+}
+
+
+
+void accept_connection(void) {
+    struct sockaddr addr;
+    socklen_t addrlen;
+    addrlen=sizeof(addr);
+    int new_fd = accept(fd_tcp_listen, (struct sockaddr*)&addr, &addrlen);
+
+    char buffer[64];
+        // Lemos os dados. Como o select avisou, o read() é instantâneo!
+    int bytes_read = read(new_fd, buffer, sizeof(buffer) - 1);
+
+    if (bytes_read == -1) {
+        printf("Erro ao ler do socket de conexão TCP.\n");
+        close(new_fd);
+    }
+
+    if (bytes_read > 0) {
+        buffer[bytes_read] = '\0';
+        int vizinho_id;
             
-            // 5. OBRIGATÓRIO: Dizer "Olá, eu sou o nó X!"
-            char msg_neighbor[32];
-            sprintf(msg_neighbor, "NEIGHBOR %02d\n", my_node->id);
-            write(fd_out, msg_neighbor, strlen(msg_neighbor));
-            
-            printf("Aresta criada com sucesso com o nó %d\n", current_command->id);
-        }
-
-        freeaddrinfo(res);
-
-    }else{
-
-        struct sockaddr addr;
-        socklen_t addrlen;
-        addrlen=sizeof(addr);
-        int new_fd = accept(fd_tcp_listen, (struct sockaddr*)&addr, &addrlen);
-
-        char buffer[64];
-            // Lemos os dados. Como o select avisou, o read() é instantâneo!
-        int bytes_read = read(new_fd, buffer, sizeof(buffer) - 1);
-
-        if (bytes_read == -1) {
-            printf("Erro ao ler do socket de conexão TCP.\n");
-            close(new_fd);
-        }
-
-        if (bytes_read > 0) {
-            buffer[bytes_read] = '\0';
-            int vizinho_id;
+        // Verificamos se ele nos disse o ID corretamente
+        if (sscanf(buffer, "NEIGHBOR %d", &vizinho_id) == 1) {
                 
-            // Verificamos se ele nos disse o ID corretamente
-            if (sscanf(buffer, "NEIGHBOR %d", &vizinho_id) == 1) {
-                    
-                // SUCESSO!
-                fd_edges[vizinho_id] = new_fd;
-                    
-                printf("Nó %d ligou-se a nós com sucesso!\n", vizinho_id);
-            }
+            // SUCESSO!
+            fd_edges[vizinho_id] = new_fd;
+                
+            printf("Nó %d ligou-se a nós com sucesso!\n", vizinho_id);
         }
     }
 }
