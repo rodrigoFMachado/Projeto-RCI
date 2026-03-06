@@ -145,6 +145,20 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
             if (strcmp(current_command->command, "ae") == 0) {
                 request=1; //contrala se é para aceitar ou pedir add edge aceitar=0,pedir=1
                 connector(my_node, current_command, request);
+            }else if(strcmp(current_command->command, "sg") == 0){
+                // usamos a estrutura local de fd_edges para mostrar as ligações ativas
+                // index de fd_edges com alguma coisa diferente de -1 é um vizinho ativo
+                bool exists = false;
+                printf("Vizinhos ativos:\n");
+                for (int i = 0; i < 100; i++) {
+                    if (fd_edges[i] != -1) {
+                        exists = true;
+                        printf("%d\n", i);
+                    }
+                }
+                if (!exists) {
+                    printf("Nenhum vizinho ativo.\n");
+                }
             }
         }
 
