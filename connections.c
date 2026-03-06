@@ -133,6 +133,12 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
             send_udp_message(my_node, current_command, myIP, myTCP);
 
+            if (result == 2) {
+                // Se o comando foi "exit", o send_udp_message já tratou do "leave" se necessário, então só precisamos de sair do loop
+                printf("A sair...\n");
+                break;
+            }
+
             if (strcmp(current_command->command, "ae") == 0) {
                 // 1. Criar o socket de saída
                 int fd_out = socket(AF_INET, SOCK_STREAM, 0);
@@ -185,7 +191,12 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
             char buffer[64];
                 // Lemos os dados. Como o select avisou, o read() é instantâneo!
             int bytes_read = read(new_fd, buffer, sizeof(buffer) - 1);
-                
+
+            if (bytes_read == -1) {
+                printf("Erro ao ler do socket de conexão TCP.\n");
+                close(new_fd);
+            }
+
             if (bytes_read > 0) {
                 buffer[bytes_read] = '\0';
                 int vizinho_id;
@@ -205,6 +216,13 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
     free(current_command);
     free(my_node);
+
+    for (int i = 0; i < 100; i++) {
+        if (fd_edges[i] != -1) {
+            close(fd_edges[i]);
+            fd_edges[i] = -1;
+        }
+    }
 
     freeaddrinfo(address_udp);
     freeaddrinfo(address_tcp);
