@@ -8,7 +8,7 @@
 
 int fd_udp, fd_tcp_listen; // Sockets e endereços globais
 
-struct addrinfo *address_udp, *address_tcp; // Endereços globais para UDP e TCP
+struct addrinfo *address_udp; // Endereços globais para UDP e TCP
 
 
 
@@ -31,14 +31,15 @@ int interface(int argc, char *argv[], char **myIP, char **myTCP, char **regIP, c
 }
 
 
-
+/// @brief Função bloqueante que envia e recebe a mensagem UDP
+/// @param udp_message 
 void send_and_receive(char *udp_message) {
     int n;
 
     struct sockaddr addr;
     socklen_t addrlen;
 
-    printf("Enviando mensagem UDP: %s\n", udp_message); // Debug: mostra a mensagem que será enviada
+    // printf("Enviando mensagem UDP: %s\n", udp_message); // Debug: mostra a mensagem que será enviada
     n=sendto(fd_udp, udp_message, strlen(udp_message), 0, address_udp->ai_addr, address_udp->ai_addrlen);
     if(n==-1)/*error*/exit(1);
 
@@ -50,12 +51,12 @@ void send_and_receive(char *udp_message) {
     if(n==-1)/*error*/exit(1);
     udp_message[n] = '\0';
     
-    printf("echo: %s\n", udp_message); // Debug: mostra a resposta recebida do servidor
+    // printf("echo: %s\n", udp_message); // Debug: mostra a resposta recebida do servidor
 }
 
 
 
-
+/// @brief Cria o FD UDP, e a estrutura que contém informação do endereço UDP, que ficará numa variável global
 struct addrinfo *udp_starter(char *regIP, char *regUDP) { 
     struct addrinfo hints, *address;
     int errcode;
@@ -76,8 +77,8 @@ struct addrinfo *udp_starter(char *regIP, char *regUDP) {
 
 
 
-
-struct addrinfo *tcp_starter(char *myIP, char *myTCP) {
+/// @brief Cria o FD TCP de escuta, e efetua o bind e listen com a porta fornecida pelo utilizador
+void tcp_starter(char *myIP, char *myTCP) {
     struct addrinfo hints, *address;
     int errcode;
 
@@ -98,6 +99,5 @@ struct addrinfo *tcp_starter(char *myIP, char *myTCP) {
     if (listen(fd_tcp_listen, 5) == -1) // max 5 pending connections
         exit(1);
 
-
-    return address;
+    return;
 }

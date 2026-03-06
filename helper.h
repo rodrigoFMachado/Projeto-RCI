@@ -4,16 +4,16 @@
 
 extern int fd_udp, fd_tcp_listen; // Sockets e endereços globais
 
-extern struct addrinfo *address_udp, *address_tcp; // Endereços globais para UDP e TCP
+extern struct addrinfo *address_udp; // Endereços globais para UDP e TCP
 
 
 int interface(int argc, char *argv[], char **myIP, char **myTCP, char **regIP, char **regUDP);
 
+void send_and_receive(char *udp_message); // função auxiliar para enviar mensagem UDP e esperar pela resposta do servidor
+
 struct addrinfo *udp_starter(char *regIP, char *regUDP); 
 
-struct addrinfo *tcp_starter(char *myIP, char *myTCP);
-
-void send_and_receive(char *udp_message); // função auxiliar para enviar mensagem UDP e esperar pela resposta do servidor
+void tcp_starter(char *myIP, char *myTCP);
 
 
 #endif

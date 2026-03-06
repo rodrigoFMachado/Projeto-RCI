@@ -94,7 +94,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     my_node->is_registered = false;
     
     address_udp = udp_starter(regIP, regUDP);
-    address_tcp = tcp_starter(myIP, myTCP); 
+    tcp_starter(myIP, myTCP); 
 
     for (int i = 0; i < 100; i++) fd_edges[i] = -1;
 
@@ -210,7 +210,6 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     free(my_node);
 
     freeaddrinfo(address_udp);
-    freeaddrinfo(address_tcp);
 
     close(fd_udp);
     close(fd_tcp_listen);
@@ -377,14 +376,17 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
 }
 
 
-
+/// @brief Processa o comando do usuário, constrói a mensagem UDP adequada, envia para o servidor e trata a resposta.
+/// @param my_node - Contém estado atual do nó, registado(?), net, id, etc
+/// @param current_command - Contém o comando processado do usuário, com os campos preenchidos (command, net, id, etc)
+/// @param myIP - Endereço IP do nó
+/// @param myTCP - Porta TCP do nó
 void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP) {
     int tid = rand() % 1000; // Gerar um TID aleatório entre 0 e 999
 
-    char udp_message[128+1];
+    char udp_message[128+1]; // mensagem UDP com máximo de 128 caracteres
 
-    int received_tid;
-    int received_op;
+    int received_tid, received_op;
 
     if (strcmp(current_command->command, "j") == 0) { // join
 
@@ -408,14 +410,14 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
                     my_node->net = current_command->net;
                     my_node->id = current_command->id;
 
-                    printf("Registo bem-sucedido na rede %d com ID %d\n", my_node->net, my_node->id);
+                    printf("Registo bem-sucedido do nó %d na rede %d.\n", my_node->id, my_node->net);
 
                 } else if (received_op == OP_REG_RES_FULL) { // Expected: 2
                     printf("Erro: Base de dados cheia. Não foi possível registar o nó.\n");
                 } 
                 
                 else {
-                    printf("Erro: Resposta inesperada do servidor com op_code: %d\n", received_op);
+                    printf("Erro: Resposta inesperada do servidor.");
                 }
             }
         }
@@ -431,7 +433,9 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
 
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d", UDP_REG, tid, OP_UNREG_REQ, my_node->net, my_node->id);
 
+
         send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
+
 
         if (sscanf(udp_message, "%*s %d %d", &received_tid, &received_op) >= 2) {
             if (received_tid == tid) {
@@ -439,10 +443,10 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
                 if (received_op == OP_UNREG_RES_OK) { // Expected: 4
                     my_node->is_registered = false;
 
-                    printf("Remoção do registo bem-sucedida da rede %d com ID %d\n", my_node->net, my_node->id);
+                    printf("Remoção do bem-sucedida do nó %d da rede %d", my_node->id, my_node->net);
                 }
                 else {
-                    printf("Erro: Resposta inesperada do servidor com op_code: %d\n", received_op);
+                    printf("Erro: Resposta inesperada do servidor.");
                 }
             }
         }
@@ -453,9 +457,20 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
 
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d", UDP_NODES, tid, OP_NODES_REQ, current_command->net);
         
+
         send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
 
 
+        if(sscanf(udp_message, "%*s %d %d", &received_tid, &received_op) >= 2) {
+            if(received_tid == tid) {
+
+                if(received_op == OP_NODES_RES) { // Expected: 1
+                    printf("Nós na rede %d: %s\n", current_command->net, udp_message + 16); // Imprime a lista de nós (tudo depois dos 16 primeiros caracteres "NODES TID OP NET ")
+                } else {
+                    printf("Erro: Resposta inesperada do servidor.");
+                }
+            }
+        }
     }
 
 
@@ -473,7 +488,9 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
 
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d", UDP_CONTACT, tid, OP_CONTACT_REQ, my_node->net, current_command->id);
         
+
         send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
+
 
         if (sscanf(udp_message, "%*s %d %d", &received_tid, &received_op) >= 2) {
             if (received_tid == tid) {
@@ -490,7 +507,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
                 } 
                 
                 else {
-                    printf("Erro: Resposta inesperada do servidor com op_code: %d\n", received_op);
+                    printf("Erro: Resposta inesperada do servidor.");
                 }
             }
         }
