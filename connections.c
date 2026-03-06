@@ -63,13 +63,12 @@ typedef struct ParsedCommand_{
 
 
 
-int fd_edges[100];// fd de conexões TCP ativas, max 100 conexões
-int pending_fds[10];
-
 
 void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP); 
 
 int word_processor(NodeState *my_node, ParsedCommand *current_command); 
+
+void connector(NodeState *my_node, ParsedCommand *current_command,int operation);
 
 
 
@@ -97,6 +96,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     tcp_starter(myIP, myTCP); 
 
     for (int i = 0; i < 100; i++) fd_edges[i] = -1;
+    int request; // Variável para controlar se é pedido ou aceitação de aresta
 
     while (1) {
         timeout.tv_sec = 5; timeout.tv_usec = 0; // Timeout de 5 segundos para o select
@@ -136,78 +136,38 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
             send_udp_message(my_node, current_command, myIP, myTCP);
 
-            if (strcmp(current_command->command, "a") == 0) {
-                // 1. Criar o socket de saída
-                int fd_out = socket(AF_INET, SOCK_STREAM, 0);
-                
-                // 2. Preparar a morada do destino com base no que recebemos do UDP
-                struct addrinfo hints, *res;
-                memset(&hints, 0, sizeof(hints));
-                hints.ai_family = AF_INET;
-                hints.ai_socktype = SOCK_STREAM;
-                
-                getaddrinfo(current_command->tempTCP_IP, current_command->tempTCP_Port, &hints, &res);
-                
-                // 3. FAZER O CONNECT (Bater à porta do vizinho)
-                if (connect(fd_out, res->ai_addr, res->ai_addrlen) == -1) {
-                    printf("Erro ao conectar ao nó %d.\n", current_command->id);
-                    close(fd_out);
-                } else {
-                    // 4. LIGOU COM SUCESSO! Guardar no nosso array mágico
-                    fd_edges[current_command->id] = fd_out;
-                    
-                    // 5. OBRIGATÓRIO: Dizer "Olá, eu sou o nó X!"
-                    char msg_neighbor[32];
-                    sprintf(msg_neighbor, "NEIGHBOR %02d\n", my_node->id);
-                    write(fd_out, msg_neighbor, strlen(msg_neighbor));
-                    
-                    printf("Aresta criada com sucesso com o nó %d\n", current_command->id);
-                }
-                freeaddrinfo(res);
-            }
-
-            
-            if (result == 2) { // Se era um comando exit
+            if (result == 2) {
+                // Se o comando foi "exit", o send_udp_message já tratou do "leave" se necessário, então só precisamos de sair do loop
                 printf("A sair...\n");
                 break;
             }
+
+            if (strcmp(current_command->command, "ae") == 0) {
+                request=1; //contrala se é para aceitar ou pedir add edge aceitar=0,pedir=1
+                connector(my_node, current_command, request);
+            }
         }
-
-
 
 
         // ==========================================
         // B. PEDIDO DE CONEXÃO TCP (fd_tcp_listen)
         // ==========================================
         if (FD_ISSET(fd_tcp_listen, &rfds)) {
-            struct sockaddr addr;
-            socklen_t addrlen;
-            addrlen=sizeof(addr);
-            int new_fd = accept(fd_tcp_listen, (struct sockaddr*)&addr, &addrlen);
-
-            char buffer[64];
-                // Lemos os dados. Como o select avisou, o read() é instantâneo!
-            int bytes_read = read(new_fd, buffer, sizeof(buffer) - 1);
-                
-            if (bytes_read > 0) {
-                buffer[bytes_read] = '\0';
-                int vizinho_id;
-                    
-                // Verificamos se ele nos disse o ID corretamente
-                if (sscanf(buffer, "NEIGHBOR %d", &vizinho_id) == 1) {
-                        
-                    // SUCESSO!
-                    fd_edges[vizinho_id] = new_fd;
-                        
-                    printf("Nó %d ligou-se a nós com sucesso!\n", vizinho_id);
-                }
-            }
+            request=0; //contrala se é para aceitar ou pedir add edge aceitar=0,pedir=1
+            connector(my_node, current_command, request);
         }
 
     }
 
     free(current_command);
     free(my_node);
+
+    for (int i = 0; i < 100; i++) {
+        if (fd_edges[i] != -1) {
+            close(fd_edges[i]);
+            fd_edges[i] = -1;
+        }
+    }
 
     freeaddrinfo(address_udp);
 
@@ -398,7 +358,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d %s %s", UDP_REG, tid, OP_REG_REQ, current_command->net, current_command->id, myIP, myTCP);
 
 
-        send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
+        send_and_receiveUDP(udp_message); // Envia a mensagem e espera pela resposta do servidor
 
 
         if (sscanf(udp_message, "%*s %d %d", &received_tid, &received_op) >= 2) {
@@ -434,7 +394,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d", UDP_REG, tid, OP_UNREG_REQ, my_node->net, my_node->id);
 
 
-        send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
+        send_and_receiveUDP(udp_message); // Envia a mensagem e espera pela resposta do servidor
 
 
         if (sscanf(udp_message, "%*s %d %d", &received_tid, &received_op) >= 2) {
@@ -458,7 +418,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d", UDP_NODES, tid, OP_NODES_REQ, current_command->net);
         
 
-        send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
+        send_and_receiveUDP(udp_message); // Envia a mensagem e espera pela resposta do servidor
 
 
         if(sscanf(udp_message, "%*s %d %d", &received_tid, &received_op) >= 2) {
@@ -489,7 +449,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d", UDP_CONTACT, tid, OP_CONTACT_REQ, my_node->net, current_command->id);
         
 
-        send_and_receive(udp_message); // Envia a mensagem e espera pela resposta do servidor
+        send_and_receiveUDP(udp_message); // Envia a mensagem e espera pela resposta do servidor
 
 
         if (sscanf(udp_message, "%*s %d %d", &received_tid, &received_op) >= 2) {
@@ -519,4 +479,68 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
         return;
     }
 
+}
+
+void connector(NodeState *my_node, ParsedCommand *current_command,int operation) {
+    // NOTA: É PRECISO MAIS HANDLING DE ERROS.
+    if (operation==1) { // Pedir aresta
+
+        int fd_out = socket(AF_INET, SOCK_STREAM, 0);
+        
+        // 2. Preparar a morada do destino com base no que recebemos do UDP
+        struct addrinfo hints, *res;
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+        
+        getaddrinfo(current_command->tempTCP_IP, current_command->tempTCP_Port, &hints, &res);
+        
+        // 3. FAZER O CONNECT (Bater à porta do vizinho)
+        if (connect(fd_out, res->ai_addr, res->ai_addrlen) == -1) {
+            printf("Erro ao conectar ao nó %d.\n", current_command->id);
+            close(fd_out);
+        } else {
+            // 4. LIGOU COM SUCESSO! Guardar no nosso array mágico
+            fd_edges[current_command->id] = fd_out;
+            
+            // 5. OBRIGATÓRIO: Dizer "Olá, eu sou o nó X!"
+            char msg_neighbor[32];
+            sprintf(msg_neighbor, "NEIGHBOR %02d\n", my_node->id);
+            write(fd_out, msg_neighbor, strlen(msg_neighbor));
+            
+            printf("Aresta criada com sucesso com o nó %d\n", current_command->id);
+        }
+
+        freeaddrinfo(res);
+
+    }else{
+
+        struct sockaddr addr;
+        socklen_t addrlen;
+        addrlen=sizeof(addr);
+        int new_fd = accept(fd_tcp_listen, (struct sockaddr*)&addr, &addrlen);
+
+        char buffer[64];
+            // Lemos os dados. Como o select avisou, o read() é instantâneo!
+        int bytes_read = read(new_fd, buffer, sizeof(buffer) - 1);
+
+        if (bytes_read == -1) {
+            printf("Erro ao ler do socket de conexão TCP.\n");
+            close(new_fd);
+        }
+
+        if (bytes_read > 0) {
+            buffer[bytes_read] = '\0';
+            int vizinho_id;
+                
+            // Verificamos se ele nos disse o ID corretamente
+            if (sscanf(buffer, "NEIGHBOR %d", &vizinho_id) == 1) {
+                    
+                // SUCESSO!
+                fd_edges[vizinho_id] = new_fd;
+                    
+                printf("Nó %d ligou-se a nós com sucesso!\n", vizinho_id);
+            }
+        }
+    }
 }
