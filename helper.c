@@ -30,8 +30,6 @@ int interface(int argc, char *argv[], char **myIP, char **myTCP, char **regIP, c
     return 0;
 }
 
-
-
 void send_and_receiveUDP(char *udp_message) {
     int n;
 
@@ -52,30 +50,6 @@ void send_and_receiveUDP(char *udp_message) {
     
     printf("echo: %s\n", udp_message); // Debug: mostra a resposta recebida do servidor
 }
-
-
-
-
-struct addrinfo *udp_starter(char *regIP, char *regUDP) { 
-    struct addrinfo hints, *address;
-    int errcode;
-
-    fd_udp=socket(AF_INET,SOCK_DGRAM,0);//UDP socket
-    if(fd_udp==-1)/*error*/exit(1);
-
-    memset(&hints, 0, sizeof (hints));
-    hints.ai_family = AF_INET;      // IPv4
-    hints.ai_socktype = SOCK_DGRAM; // UDP socket
-
-    errcode = getaddrinfo(regIP, regUDP, &hints, &address);
-    if (errcode != 0) /*error*/ exit(1);
-
-
-    return address;
-}
-
-
-
 
 struct addrinfo *tcp_starter(char *myIP, char *myTCP) {
     struct addrinfo hints, *address;
