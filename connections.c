@@ -64,7 +64,9 @@ typedef struct ParsedCommand_{
 
 
 
-void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP); 
+int handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP); 
+
+void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command);
 
 int word_processor(NodeState *my_node, ParsedCommand *current_command); 
 
@@ -76,7 +78,7 @@ void accept_connection(void);
 
 void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     struct timeval timeout;
-    int counter, maxfd, result;
+    int counter, maxfd, word_return, contact_err_code;
     fd_set rfds;
 
     NodeState *my_node = malloc(sizeof(NodeState)); // Alocar memória para a estrutura
@@ -108,6 +110,8 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         FD_SET(STDIN_FILENO, &rfds);
         FD_SET(fd_tcp_listen, &rfds);
 
+        contact_err_code = 0; // Resetar a variável de erro do contacto a cada iteração
+
         maxfd = fd_tcp_listen; // conexões podem morrer
 
         // 1. Adicionar conexões TCP ativas (fd_edges)
@@ -131,39 +135,28 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         // ==========================================
         if (FD_ISSET(STDIN_FILENO, &rfds)) { // teclado, envia msg UDP
 
-            result = word_processor(my_node, current_command);
+            word_return = word_processor(my_node, current_command);
             
-            if (result == 1) { 
+            if (word_return == 1) { 
                 continue; // Se houve um erro no processamento do comando, volta para o início do loop
             }
 
-            send_udp_message(my_node, current_command, myIP, myTCP);
-
-            if (result == 2) {
-                // Se o comando foi "exit", o send_udp_message já tratou do "leave" se necessário, então só precisamos de sair do loop
+            if (word_return == 2) {
+                // Se o comando foi "exit", word_processor trocou para l ou deixou x. Invocar a cena que manda mensagem UDP agora
+                handle_udp_commands(my_node, current_command, myIP, myTCP);
                 printf("A sair...\n");
                 break;
             }
 
-            if (strcmp(current_command->command, "ae") == 0 && current_command->tempTCP_IP[0] != '\0') {
-                
-                connect_to_node(my_node, current_command);
+            contact_err_code = handle_udp_commands(my_node, current_command, myIP, myTCP);
 
-            }else if(strcmp(current_command->command, "sg") == 0){
-                // usamos a estrutura local de fd_edges para mostrar as ligações ativas
-                // index de fd_edges com alguma coisa diferente de -1 é um vizinho ativo
-                bool exists = false;
-                printf("Vizinhos ativos:\n");
-                for (int i = 0; i < 100; i++) {
-                    if (fd_edges[i] != -1) {
-                        exists = true;
-                        printf("%d\n", i);
-                    }
-                }
-                if (!exists) {
-                    printf("Nenhum vizinho ativo.\n");
-                }
+            // isto secalhar funciona universlamnet para tudo, se falha, pode so voltar e nem seguir para TCP?
+            if(contact_err_code == 1) {
+                // Se o contacto falhou, não vamos tentar processar o segmento TCP porque não temos os dados necessários
+                continue;
             }
+
+            handle_tcp_commands(my_node, current_command);
         }
 
 
@@ -176,6 +169,18 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
         }
 
+
+        // ==========================================
+        // C. LER MENSAGENS DOS VIZINHOS JÁ CONECTADOS
+        // ==========================================
+        for (int i = 0; i < 100; i++) {
+            if (fd_edges[i] != -1 && FD_ISSET(fd_edges[i], &rfds)) {
+                // O vizinho 'i' disse alguma coisa (ou foi abaixo!)
+                // char buffer[1024];
+                // int bytes = read(fd_edges[i], buffer, ...);
+                // process_tcp_message(i, buffer, bytes, my_node);
+            }
+        }
     }
 
     free(current_command);
@@ -211,25 +216,26 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
 
             // Verificar join OU j
             if (strcmp(command_first_w, "join") == 0 || strcmp(command_first_w, "j") == 0) {
-                strcpy(current_command->command, "j"); 
 
                 if (sscanf(buffer_teclado, "%*s %d %d", &current_command->net, &current_command->id) != 2) {// get NET and ID 
 
                     printf("Erro: Argumentos inválidos. Uso: join net id\n");
                     return 1; // Retorna 1 para continuar
                 }
+                strcpy(current_command->command, "j"); 
             }
 
 
 
             // Verificar leave OU l
             else if (strcmp(command_first_w, "leave") == 0 || strcmp(command_first_w, "l") == 0) {
-                strcpy(current_command->command, "l"); 
                 
                 if (sscanf(buffer_teclado, "%*s") != 0) {
                     printf("Erro: Argumentos inválidos. Uso: leave \n");
-                    return 1; // Retorna 1 para continuar
+                    return 
+                    1; // Retorna 1 para continuar
                 }
+                strcpy(current_command->command, "l"); 
             }
 
 
@@ -250,21 +256,22 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
 
 
             else if(strcmp(command_first_w, "add") == 0) {
-                strcpy(current_command->command, "ae");
 
                 if (sscanf(buffer_teclado, "%*s %*s %d", &current_command->id) !=1) {
                     printf("Erro: Argumentos inválidos. Uso: add edge id\n");
                     return 1; // Retorna 1 para continuar
                 }
+                strcpy(current_command->command, "ae");
+
             }
 
             else if(strcmp(command_first_w, "ae") == 0) {
-                strcpy(current_command->command, "ae");
 
                 if (sscanf(buffer_teclado, "%*s %d", &current_command->id) !=1) {
                     printf("Erro: Argumentos inválidos. Uso: ae id\n");
                     return 1; // Retorna 1 para continuar
                 }
+                strcpy(current_command->command, "ae");
             }
 
 
@@ -275,28 +282,28 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
                 if(sscanf(buffer_teclado, "%*s %s", command_second_w) == 1) { // Lemos a 2ª palavra
 
                     if (strcmp(command_second_w, "nodes") == 0) {
-                        strcpy(current_command->command, "n"); 
 
                         if (sscanf(buffer_teclado, "%*s %*s %d", &current_command->net) != 1) {
                             printf("Erro: Argumentos inválidos. Uso: show nodes net\n");
                             return 1;
                         }
+                        strcpy(current_command->command, "n");
 
                     } else if (strcmp(command_second_w, "neighbors") == 0) {
-                        strcpy(current_command->command, "sg");
-                        
+
                         if (sscanf(buffer_teclado, "%*s %*s") != 0) {
                             printf("Erro: Argumentos inválidos. Uso: show neighbors\n");
                             return 1;
                         }
+                        strcpy(current_command->command, "sg");
 
                     } else if (strcmp(command_second_w, "routing") == 0) {
-                        strcpy(current_command->command, "sr");
 
                         if (sscanf(buffer_teclado, "%*s %*s %d", &current_command->dest) != 1) {
                             printf("Erro: Argumentos inválidos. Uso: show routing dest\n");
                             return 1;
                         }
+                        strcpy(current_command->command, "sr");
 
                     } else {
                         printf("Erro: Opção inválida. Uso: show [nodes|neighbors|routing]\n");
@@ -310,32 +317,30 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
             
             // show por abreviatura
             else if (strcmp(command_first_w, "n") == 0) {
-                strcpy(current_command->command, "n"); 
 
-                // Saltamos só 1 palavra ("n") e lemos o argumento
                 if (sscanf(buffer_teclado, "%*s %d", &current_command->net) != 1) {
                     printf("Erro: Argumentos inválidos. Uso: n net\n");
                     return 1;
                 }
+                strcpy(current_command->command, "n");
             } 
             
             else if (strcmp(command_first_w, "sg") == 0) {
-                strcpy(current_command->command, "sg");
 
                 if (sscanf(buffer_teclado, "%*s") != 0) {
                     printf("Erro: Argumentos inválidos. Uso: sg\n");
                     return 1;
                 }
+                strcpy(current_command->command, "sg");
             } 
             
             else if (strcmp(command_first_w, "sr") == 0) {
-                strcpy(current_command->command, "sr");
 
-                // Saltamos só 1 palavra ("sr") e lemos o destino
                 if (sscanf(buffer_teclado, "%*s %d", &current_command->dest) != 1) {
                     printf("Erro: Argumentos inválidos. Uso: sr dest\n");
                     return 1;
                 }
+                strcpy(current_command->command, "sr");
             }
 
             else {
@@ -357,7 +362,7 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
 /// @param current_command - Contém o comando processado do usuário, com os campos preenchidos (command, net, id, etc)
 /// @param myIP - Endereço IP do nó
 /// @param myTCP - Porta TCP do nó
-void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP) {
+int handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP) {
     int tid = rand() % 1000; // Gerar um TID aleatório entre 0 e 999
 
     char udp_message[128+1]; // mensagem UDP com máximo de 128 caracteres
@@ -368,7 +373,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
 
         if(my_node->is_registered) {
             printf("Erro: Já está registado. A cada contacto pode estar associado apenas um nó.\n");
-            return;
+            return 1;
         }
 
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d %s %s", UDP_REG, tid, OP_REG_REQ, current_command->net, current_command->id, myIP, myTCP);
@@ -390,10 +395,11 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
 
                 } else if (received_op == OP_REG_RES_FULL) { // Expected: 2
                     printf("Erro: Base de dados cheia. Não foi possível registar o nó.\n");
-                } 
+                    return 1;
                 
-                else {
+                } else {
                     printf("Erro: Resposta inesperada do servidor.");
+                    return 1;
                 }
             }
         }
@@ -404,7 +410,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
 
         if(!my_node->is_registered) {
             printf("Erro: Não está registado. Não pode executar 'leave'.\n");
-            return;
+            return 1;
         }
 
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d", UDP_REG, tid, OP_UNREG_REQ, my_node->net, my_node->id);
@@ -423,6 +429,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
                 }
                 else {
                     printf("Erro: Resposta inesperada do servidor.");
+                    return 1;
                 }
             }
         }
@@ -444,6 +451,7 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
                     printf("Nós na rede %d: %s\n", current_command->net, udp_message + 16); // Imprime a lista de nós (tudo depois dos 16 primeiros caracteres "NODES TID OP NET ")
                 } else {
                     printf("Erro: Resposta inesperada do servidor.");
+                    return 1;
                 }
             }
         }
@@ -454,12 +462,12 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
 
         if(!my_node->is_registered) {
             printf("Erro: Não está registado. Não pode executar 'add'.\n");
-            return;
+            return 1;
         }
 
         if(current_command->id == my_node->id) {
             printf("Erro: Não pode criar uma aresta para si mesmo.\n");
-            return;
+            return 1;
         }
 
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d", UDP_CONTACT, tid, OP_CONTACT_REQ, my_node->net, current_command->id);
@@ -478,10 +486,12 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
                 
                 else if (received_op == OP_CONTACT_NO_REG) { // Expected: 2
                     printf("Erro: Nó %d não registado. Não foi possível obter o contacto.\n", current_command->id);
+                    return 1;
                 } 
                 
                 else {
                     printf("Erro: Resposta inesperada do servidor.");
+                    return 1;
                 }
             }
         }
@@ -490,14 +500,37 @@ void send_udp_message(NodeState *my_node, ParsedCommand *current_command, char *
 
 
     else if (strcmp(current_command->command, "x") == 0) {
-        return;
+        return 0;
     }
 
-    return;
+    return 0;
 
 }
 
+void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
 
+    if (strcmp(current_command->command, "ae") == 0) {
+        
+        connect_to_node(my_node, current_command);
+
+    } else if(strcmp(current_command->command, "sg") == 0){
+        // usamos a estrutura local de fd_edges para mostrar as ligações ativas
+        // index de fd_edges com alguma coisa diferente de -1 é um vizinho ativo
+        bool exists = false;
+        printf("Vizinhos ativos:\n");
+        for (int i = 0; i < 100; i++) {
+            if (fd_edges[i] != -1) {
+                exists = true;
+                printf("%d\n", i);
+            }
+        }
+        if (!exists) {
+            printf("Nenhum vizinho ativo.\n");
+        }
+    }
+
+    return;
+}
 
 void connect_to_node(NodeState *my_node, ParsedCommand *current_command) {
     int fd_out = socket(AF_INET, SOCK_STREAM, 0);
@@ -533,30 +566,29 @@ void connect_to_node(NodeState *my_node, ParsedCommand *current_command) {
 
 void accept_connection(void) {
     struct sockaddr addr;
-    socklen_t addrlen;
-    addrlen=sizeof(addr);
+    socklen_t addrlen = sizeof(addr);
+
     int new_fd = accept(fd_tcp_listen, (struct sockaddr*)&addr, &addrlen);
 
     char buffer[64];
-        // Lemos os dados. Como o select avisou, o read() é instantâneo!
+    // Lemos os dados instantaneamente
     int bytes_read = read(new_fd, buffer, sizeof(buffer) - 1);
 
-    if (bytes_read == -1) {
-        printf("Erro ao ler do socket de conexão TCP.\n");
+    // Se houver erro de leitura OU se a outra pessoa fechar a ligação imediatamente (bytes == 0)
+    if (bytes_read <= 0) {
+        printf("Erro ou ligação terminada antes de enviar ID.\n");
         close(new_fd);
+        return; // IMPORTANTE: Sair da função logo aqui!
     }
 
-    if (bytes_read > 0) {
-        buffer[bytes_read] = '\0';
-        int vizinho_id;
-            
-        // Verificamos se ele nos disse o ID corretamente
-        if (sscanf(buffer, "NEIGHBOR %d", &vizinho_id) == 1) {
-                
-            // SUCESSO!
-            fd_edges[vizinho_id] = new_fd;
-                
-            printf("Nó %d ligou-se a nós com sucesso!\n", vizinho_id);
-        }
+    buffer[bytes_read] = '\0';
+    int vizinho_id;
+        
+    if (sscanf(buffer, "NEIGHBOR %d", &vizinho_id) == 1) {
+        fd_edges[vizinho_id] = new_fd;
+    } else {
+        // Protocol Violation! (Mandou lixo)
+        printf("Aviso: Violação de protocolo. A fechar ligação.\n");
+        close(new_fd); // PREVINE O LEAK
     }
 }
