@@ -77,7 +77,6 @@ void accept_connection(void);
 
 
 void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
-    struct timeval timeout;
     int counter, maxfd, word_return, contact_err_code;
     fd_set rfds;
 
@@ -104,7 +103,6 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     for (int i = 0; i < 100; i++) fd_edges[i] = -1;
 
     while (1) {
-        timeout.tv_sec = 5; timeout.tv_usec = 0; // Timeout de 5 segundos para o select
         FD_ZERO(&rfds);
 
         FD_SET(STDIN_FILENO, &rfds);
@@ -124,7 +122,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
 
 
-        counter = select(maxfd + 1, &rfds, (fd_set *)NULL, (fd_set *)NULL, &timeout);
+        counter = select(maxfd + 1, &rfds, (fd_set *)NULL, (fd_set *)NULL, (struct timeval *) NULL);
         if (counter < 0) /*error*/ exit(1);
         if (counter == 0) continue; // Timeout, volta a esperar
 

@@ -29,6 +29,9 @@ int interface(int argc, char *argv[], char **myIP, char **myTCP, char **regIP, c
 
     return 0;
 }
+
+
+
 /// @brief Função bloqueante que envia e recebe a mensagem UDP
 /// @param udp_message
 void send_and_receiveUDP(char *udp_message) {
@@ -39,18 +42,28 @@ void send_and_receiveUDP(char *udp_message) {
 
     // printf("Enviando mensagem UDP: %s\n", udp_message); // Debug: mostra a mensagem que será enviada
     n=sendto(fd_udp, udp_message, strlen(udp_message), 0, address_udp->ai_addr, address_udp->ai_addrlen);
-    if(n==-1)/*error*/exit(1);
+    if(n == -1) {
+        printf("Erro ao enviar UDP.\n");
+        return;
+    }
 
 
     // Espera de resposta
     addrlen = sizeof(addr);
 
-    n = recvfrom(fd_udp, udp_message, 128, 0, (struct sockaddr*)&addr, &addrlen);
-    if(n==-1)/*error*/exit(1);
+    if(n == -1) {
+        // O timeout disparou! O pacote perdeu-se ou o servidor está em baixo.
+        printf("Erro: O servidor não respondeu (Timeout)\n");
+        udp_message[0] = '\0'; // Limpa a string para o sscanf falhar em segurança
+        return;
+    }
     udp_message[n] = '\0';
     
     // printf("echo: %s\n", udp_message); // Debug: mostra a resposta recebida do servidor
 }
+
+
+
 /// @brief Cria o FD UDP, e a estrutura que contém informação do endereço UDP, que ficará numa variável global
 struct addrinfo *udp_starter(char *regIP, char *regUDP) { 
     struct addrinfo hints, *address;
@@ -58,6 +71,15 @@ struct addrinfo *udp_starter(char *regIP, char *regUDP) {
 
     fd_udp=socket(AF_INET,SOCK_DGRAM,0);//UDP socket
     if(fd_udp==-1)/*error*/exit(1);
+
+    struct timeval read_timeout;
+    read_timeout.tv_sec = 5; // Espera no máximo 5 segundos pela resposta do professor
+    read_timeout.tv_usec = 0;
+    
+    if (setsockopt(fd_udp, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof(read_timeout)) < 0) {
+        perror("Erro a definir timeout do UDP");
+        exit(1);
+    }
 
     memset(&hints, 0, sizeof (hints));
     hints.ai_family = AF_INET;      // IPv4
@@ -69,6 +91,9 @@ struct addrinfo *udp_starter(char *regIP, char *regUDP) {
 
     return address;
 }
+
+
+
 /// @brief Cria o FD TCP de escuta, e efetua o bind e listen com a porta fornecida pelo utilizador
 void tcp_starter(char *myIP, char *myTCP) {
     struct addrinfo hints, *address;
