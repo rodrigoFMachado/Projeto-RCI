@@ -50,7 +50,7 @@ void send_and_receiveUDP(char *udp_message) {
 
     // Espera de resposta
     addrlen = sizeof(addr);
-
+    n = recvfrom(fd_udp, udp_message, 128, 0, (struct sockaddr*)&addr, &addrlen);
     if(n == -1) {
         // O timeout disparou! O pacote perdeu-se ou o servidor está em baixo.
         printf("Erro: O servidor não respondeu (Timeout)\n");
