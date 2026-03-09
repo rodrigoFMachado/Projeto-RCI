@@ -109,7 +109,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
         maxfd = fd_tcp_listen; // conexões podem morrer
 
-        // 1. Adicionar conexões TCP ativas (fd_edges)
+        // Adicionar conexões TCP ativas (fd_edges)
         for (int n = 0; n < 100; n++) { 
             if (fd_edges[n] != -1) {
                 FD_SET(fd_edges[n], &rfds);
@@ -117,12 +117,9 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
             }
         }
 
-
-
         counter = select(maxfd + 1, &rfds, (fd_set *)NULL, (fd_set *)NULL, (struct timeval *) NULL);
         if (counter < 0) /*error*/ exit(1);
         if (counter == 0) continue; // Timeout, volta a esperar
-
 
 
         // ==========================================
@@ -136,12 +133,28 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                 continue; // Se houve um erro no processamento do comando, volta para o início do loop
             }
 
-            if (word_return == 2) {
-                // Se o comando foi "exit", word_processor trocou para l ou deixou x. Invocar a cena que manda mensagem UDP agora
-                handle_udp_commands(my_node, current_command, myIP, myTCP);
+            if (strcmp(current_command->command, "x") == 0) {
+                strcpy(current_command->command, "re");
+                // por fazer - faz o remove edge final(loop de todos os vizinhos ativos)
+                for(int i = 0; i < 100; i++) {
+                    if(fd_edges[i] != -1) {
+                        current_command->id = i;
+                        handle_tcp_commands(my_node, current_command);
+                    }
+                }
+
+                if(my_node->is_registered) {
+                    // Se estiver registado, faz o leave final
+                    strcpy(current_command->command, "l"); // Executa leave final
+                }
+                
+                handle_udp_commands(my_node, current_command, myIP, myTCP); // faz o leave final
+                
                 printf("A sair...\n");
                 break;
             }
+
+
 
             contact_err_code = handle_udp_commands(my_node, current_command, myIP, myTCP);
 
@@ -170,10 +183,24 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         // ==========================================
         for (int i = 0; i < 100; i++) {
             if (fd_edges[i] != -1 && FD_ISSET(fd_edges[i], &rfds)) {
-                // O vizinho 'i' disse alguma coisa (ou foi abaixo!)
-                // char buffer[1024];
-                // int bytes = read(fd_edges[i], buffer, ...);
-                // process_tcp_message(i, buffer, bytes, my_node);
+                
+                char buffer[1024];
+                int bytes = read(fd_edges[i], buffer, sizeof(buffer) - 1);
+
+                if (bytes <= 0) { 
+                    // Se bytes == 0, o vizinho desligou-se normalmente (remove edge ou exit).
+                    // Se bytes == -1, a ligação caiu de forma bruta.
+                    printf("O nó %d desconectou-se (aresta removida).\n", i);
+                    close(fd_edges[i]);
+                    fd_edges[i] = -1; // Limpamos a aresta do nosso lado
+                    
+                } else {
+                    // Recebemos texto do vizinho!
+                    buffer[bytes] = '\0';
+                    printf("Recebido do nó %d: %s", i, buffer);
+                    
+                    // (Mais tarde) process_tcp_message(i, buffer, my_node);
+                }
             }
         }
     }
@@ -241,15 +268,7 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
 
             // Verificar exit
             else if (strcmp(command_first_w, "x") == 0) {
-                if(my_node->is_registered) {
-                    strcpy(current_command->command, "l"); // Executa leave antes de sair
-
-                } else {
-                    strcpy(current_command->command, "x");
-                    
-                }
-
-                return 2; // Código especial: dá sempre break
+                strcpy(current_command->command, "x");
             }
 
             // Verificar add edge
@@ -512,6 +531,16 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         }
         if (!exists) {
             printf("Nenhum vizinho ativo.\n");
+        }
+    } else if (strcmp(current_command->command, "re") == 0) {
+        int vizinho = current_command->id;
+        
+        if (fd_edges[vizinho] != -1) {
+            close(fd_edges[vizinho]);
+            fd_edges[vizinho] = -1; // Liberta o slot!
+            printf("Aresta com o nó %d removida.\n", vizinho);
+        } else {
+            printf("Erro: Não existe aresta ativa com o nó %d.\n", vizinho);
         }
     }
 

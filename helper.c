@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <netdb.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/socket.h>
     
 #include "helper.h"
 
@@ -59,7 +62,7 @@ void send_and_receiveUDP(char *udp_message) {
     }
     udp_message[n] = '\0';
     
-    // printf("echo: %s\n", udp_message); // Debug: mostra a resposta recebida do servidor
+    printf("echo: %s\n", udp_message); // Debug: mostra a resposta recebida do servidor
 }
 
 
