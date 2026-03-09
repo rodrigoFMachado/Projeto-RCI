@@ -12,7 +12,7 @@
 #include "connections.h"
 #include "helper.h"
 
-
+#define BUFFER_TCP_SIZE 128
 
 // COMANDOS UDP para o servidor
 #define UDP_NODES   "NODES"
@@ -184,7 +184,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         for (int i = 0; i < 100; i++) {
             if (fd_edges[i] != -1 && FD_ISSET(fd_edges[i], &rfds)) {
                 
-                char buffer[1024];
+                char buffer[BUFFER_TCP_SIZE];
                 int bytes = read(fd_edges[i], buffer, sizeof(buffer) - 1);
 
                 if (bytes <= 0) { 
@@ -533,14 +533,13 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
             printf("Nenhum vizinho ativo.\n");
         }
     } else if (strcmp(current_command->command, "re") == 0) {
-        int vizinho = current_command->id;
         
-        if (fd_edges[vizinho] != -1) {
-            close(fd_edges[vizinho]);
-            fd_edges[vizinho] = -1; // Liberta o slot!
-            printf("Aresta com o nó %d removida.\n", vizinho);
+        if (fd_edges[current_command->id] != -1) {
+            close(fd_edges[current_command->id]);
+            fd_edges[current_command->id] = -1; // Liberta o slot!
+            printf("Aresta com o nó %d removida.\n", current_command->id);
         } else {
-            printf("Erro: Não existe aresta ativa com o nó %d.\n", vizinho);
+            printf("Erro: Não existe aresta ativa com o nó %d.\n", current_command->id);
         }
     }
 
@@ -585,7 +584,7 @@ void accept_connection(void) {
 
     int new_fd = accept(fd_tcp_listen, (struct sockaddr*)&addr, &addrlen);
 
-    char buffer[64];
+    char buffer[BUFFER_TCP_SIZE];
     // Lemos os dados instantaneamente
     int bytes_read = read(new_fd, buffer, sizeof(buffer) - 1);
 
