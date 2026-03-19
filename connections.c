@@ -541,6 +541,16 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         } else {
             printf("Erro: Não existe aresta ativa com o nó %d.\n", current_command->id);
         }
+    }else if (strcmp(current_command->command, "a") == 0) {
+        // Por fazer - Anunciar a minha presença para os vizinhos ativos (enviar uma mensagem TCP para cada um)
+        char announce_msg[32];
+        sprintf(announce_msg, "ROUTE %d %d\n", my_node->id, 0);
+
+        for (int i = 0; i < 100; i++) {
+            if (fd_edges[i] != -1) {
+                write(fd_edges[i], announce_msg, strlen(announce_msg));
+            }
+        }
     }
 
     return;
