@@ -74,6 +74,8 @@ void connect_to_node(NodeState *my_node, ParsedCommand *current_command);
 
 void accept_connection(void);
 
+void process_tcp_message(NodeState *my_node, int neighbor_id, char *buffer);
+
 void NodeState_inicialization(NodeState *my_node, int joined_state, int net, int id);
 
 
@@ -202,7 +204,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                     buffer[bytes] = '\0';
                     printf("Recebido do nó %d: %s", i, buffer);
                     
-                    // (Mais tarde) process_tcp_message(i, buffer, my_node);
+                    process_tcp_message(my_node, i, buffer);
                 }
             }
         }
@@ -616,6 +618,67 @@ void accept_connection(void) {
         close(new_fd); // PREVINE O LEAK
     }
 }
+
+void process_tcp_message(NodeState *my_node, int neighbor_id, char *buffer){
+    char local_buffer[BUFFER_TCP_SIZE];
+    char *line;
+    char *saveptr = NULL;
+
+    (void)my_node;
+
+    strncpy(local_buffer, buffer, sizeof(local_buffer) - 1);
+    local_buffer[sizeof(local_buffer) - 1] = '\0';
+
+    line = strtok_r(local_buffer, "\n", &saveptr);
+
+    if (line == NULL) {
+        printf("Aviso: Mensagem TCP vazia ou sem <LF> recebida do nó %d.\n", neighbor_id);
+        return;
+    }
+
+    while (line != NULL) {
+        int origin, dest, n;
+        char extra[32];
+        char chat[129];
+
+        if (sscanf(line, "ROUTE %d %d %31s", &dest, &n, extra) == 2) {
+            if (dest < 0 || dest >= 100) {
+                printf("Aviso: ROUTE com destino inválido recebida do nó %d.\n", neighbor_id);
+            } else if (n < 0 || n == INT_MAX) {
+                printf("Aviso: ROUTE com distância inválida recebida do nó %d.\n", neighbor_id);
+            } else {
+                printf("Mensagem TCP válida do tipo ROUTE recebida do nó %d.\n", neighbor_id);
+            }
+        } else if (sscanf(line, "COORD %d %31s", &dest, extra) == 1) {
+            if (dest < 0 || dest >= 100) {
+                printf("Aviso: COORD com destino inválido recebida do nó %d.\n", neighbor_id);
+            } else {
+                printf("Mensagem TCP válida do tipo COORD recebida do nó %d.\n", neighbor_id);
+            }
+        } else if (sscanf(line, "UNCOORD %d %31s", &dest, extra) == 1) {
+            if (dest < 0 || dest >= 100) {
+                printf("Aviso: UNCOORD com destino inválido recebida do nó %d.\n", neighbor_id);
+            } else {
+                printf("Mensagem TCP válida do tipo UNCOORD recebida do nó %d.\n", neighbor_id);
+            }
+        } else if (sscanf(line, "CHAT %d %d %128[^\n]", &origin, &dest, chat) == 3) {
+            if (origin < 0 || origin >= 100) {
+                printf("Aviso: CHAT com origem inválida recebida do nó %d.\n", neighbor_id);
+            } else if (dest < 0 || dest >= 100) {
+                printf("Aviso: CHAT com destino inválido recebida do nó %d.\n", neighbor_id);
+            } else if (strlen(chat) == 0 || strlen(chat) > 128) {
+                printf("Aviso: CHAT com conteúdo inválido recebida do nó %d.\n", neighbor_id);
+            } else {
+                printf("Mensagem TCP válida do tipo CHAT recebida do nó %d.\n", neighbor_id);
+            }
+        } else {
+            printf("Aviso: Mensagem TCP mal formatada recebida do nó %d: %s\n", neighbor_id, line);
+        }
+
+        line = strtok_r(NULL, "\n", &saveptr);
+    }
+}
+
 
 void NodeState_inicialization(NodeState *my_node, int joined_state, int net, int id) {
 
