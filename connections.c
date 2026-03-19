@@ -7,6 +7,7 @@
 #include <sys/select.h>
 #include <unistd.h>
 #include <netdb.h>
+#include <limits.h>
 
 
 #include "connections.h"
@@ -73,6 +74,8 @@ void connect_to_node(NodeState *my_node, ParsedCommand *current_command);
 
 void accept_connection(void);
 
+void NodeState_inicialization(NodeState *my_node, int joined_state, int net, int id);
+
 
 
 void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
@@ -92,7 +95,7 @@ void mother_of_all_manager(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         exit(1);
     }
 
-    my_node->is_registered = false;
+    NodeState_inicialization(my_node, 0, -1, -1); // Inicializa o estado do nó como não registado
 
     address_udp = udp_starter(regIP, regUDP);
     tcp_starter(myIP, myTCP); 
@@ -391,10 +394,7 @@ int handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char
             if (received_tid == tid) {
 
                 if (received_op == OP_REG_RES_OK) { // Expected: 1
-                    my_node->is_registered = true;
-
-                    my_node->net = current_command->net;
-                    my_node->id = current_command->id;
+                    NodeState_inicialization(my_node, 1, current_command->net, current_command->id); // Atualiza o estado do nó para registado com os dados corretos
 
                     printf("Registo bem-sucedido do nó %d na rede %d.\n", my_node->id, my_node->net);
 
@@ -605,4 +605,32 @@ void accept_connection(void) {
         printf("Aviso: Violação de protocolo. A fechar ligação.\n");
         close(new_fd); // PREVINE O LEAK
     }
+}
+
+void NodeState_inicialization(NodeState *my_node, int joined_state, int net, int id) {
+
+    if (joined_state == 1){
+        my_node->is_registered = true;
+        my_node->net = net;
+        my_node->id = id;
+        my_node->dist[id] = 0;
+        my_node->succ[id] = id;
+        return;
+    }else{
+        my_node->is_registered = false;
+        my_node->net = -1;
+        my_node->id = -1;
+    }
+
+    for (int i = 0; i < 100; i++) {
+        my_node->dist[i] = INT_MAX; // Infinito
+        my_node->succ[i] = -1;
+        my_node->state[i] = 0;
+        my_node->succ_coord[i] = -1;
+
+        for (int j = 0; j < 100; j++) {
+            my_node->coord[i][j] = -1; // -1 para indicar "sem coordenador" ou "nenhum"
+        }
+    }
+
 }
