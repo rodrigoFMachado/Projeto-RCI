@@ -643,33 +643,59 @@ void process_tcp_message(NodeState *my_node, int neighbor_id, char *buffer){
 
         if (sscanf(line, "ROUTE %d %d %31s", &dest, &n, extra) == 2) {
             if (dest < 0 || dest >= 100) {
+
                 printf("Aviso: ROUTE com destino inválido recebida do nó %d.\n", neighbor_id);
+
             } else if (n < 0 || n == INT_MAX) {
+
                 printf("Aviso: ROUTE com distância inválida recebida do nó %d.\n", neighbor_id);
+
             } else {
-                printf("Mensagem TCP válida do tipo ROUTE recebida do nó %d.\n", neighbor_id);
+
+                // Mensagem TCP válida do tipo ROUTE recebida do nó neighbor_id.
+                // tratar de processo pos receber uma mensagem ROUTE aqui, se necessário. Por agora, só imprimimos a mensagem de debug.
+
             }
+
         } else if (sscanf(line, "COORD %d %31s", &dest, extra) == 1) {
             if (dest < 0 || dest >= 100) {
+
                 printf("Aviso: COORD com destino inválido recebida do nó %d.\n", neighbor_id);
+
             } else {
-                printf("Mensagem TCP válida do tipo COORD recebida do nó %d.\n", neighbor_id);
+
+                // Mensagem TCP válida do tipo COORD recebida do nó neighbor_id.
+                // tratar de processo pos receber uma mensagem COORD aqui.
+
             }
+
         } else if (sscanf(line, "UNCOORD %d %31s", &dest, extra) == 1) {
             if (dest < 0 || dest >= 100) {
+
                 printf("Aviso: UNCOORD com destino inválido recebida do nó %d.\n", neighbor_id);
+
             } else {
-                printf("Mensagem TCP válida do tipo UNCOORD recebida do nó %d.\n", neighbor_id);
+
+                // Mensagem TCP válida do tipo UNCOORD recebida do nó neighbor_id.
+                // tratar de processo pos receber uma mensagem UNCOORD aqui.
             }
         } else if (sscanf(line, "CHAT %d %d %128[^\n]", &origin, &dest, chat) == 3) {
             if (origin < 0 || origin >= 100) {
+
                 printf("Aviso: CHAT com origem inválida recebida do nó %d.\n", neighbor_id);
+
             } else if (dest < 0 || dest >= 100) {
+
                 printf("Aviso: CHAT com destino inválido recebida do nó %d.\n", neighbor_id);
+
             } else if (strlen(chat) == 0 || strlen(chat) > 128) {
+
                 printf("Aviso: CHAT com conteúdo inválido recebida do nó %d.\n", neighbor_id);
+
             } else {
-                printf("Mensagem TCP válida do tipo CHAT recebida do nó %d.\n", neighbor_id);
+
+                printf("Mensagem recebida do nó %d:\n %s\n", origin, chat);
+
             }
         } else {
             printf("Aviso: Mensagem TCP mal formatada recebida do nó %d: %s\n", neighbor_id, line);
