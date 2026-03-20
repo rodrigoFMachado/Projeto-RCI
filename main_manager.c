@@ -1,0 +1,332 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <unistd.h>
+#include <netdb.h>
+#include <limits.h>
+
+
+#include "main_manager.h"
+#include "transport_handling.h"
+#include "network_apps.h"
+
+
+
+int fd_udp, fd_tcp_listen; // Sockets e endereços globais
+int fd_edges[100]; // fd de conexões TCP ativas, max 100 conexões
+struct addrinfo *address_udp; // Endereços globais para UDP e TCP
+
+
+
+int word_processor(NodeState *my_node, ParsedCommand *current_command); 
+
+
+
+void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
+    int counter, maxfd, word_return, contact_err_code;
+    fd_set rfds;
+
+    NodeState *my_node = malloc(sizeof(NodeState)); // Alocar memória para a estrutura
+    if(my_node == NULL) {
+        fprintf(stderr, "Erro ao alocar memória para NodeState\n");
+        exit(1);
+    }
+
+    ParsedCommand *current_command = malloc(sizeof(ParsedCommand)); // Alocar memória para a estrutura
+    if(current_command == NULL) {
+        fprintf(stderr, "Erro ao alocar memória para ParsedCommand\n");
+        free(my_node); // Liberar a memória alocada para NodeState antes de sair
+        exit(1);
+    }
+
+    NodeState_inicialization(my_node, 0, -1, -1); // Inicializa o estado do nó como não registado
+
+    address_udp = udp_starter(regIP, regUDP);
+    tcp_starter(myIP, myTCP); 
+
+    for (int i = 0; i < 100; i++) fd_edges[i] = -1;
+
+    while (1) {
+        FD_ZERO(&rfds);
+
+        FD_SET(STDIN_FILENO, &rfds);
+        FD_SET(fd_tcp_listen, &rfds);
+
+        contact_err_code = 0; // Resetar a variável de erro do contacto a cada iteração
+
+        maxfd = fd_tcp_listen; // conexões podem morrer
+
+        // Adicionar conexões TCP ativas (fd_edges)
+        for (int n = 0; n < 100; n++) { 
+            if (fd_edges[n] != -1) {
+                FD_SET(fd_edges[n], &rfds);
+                if (fd_edges[n] > maxfd) maxfd = fd_edges[n];
+            }
+        }
+
+        counter = select(maxfd + 1, &rfds, (fd_set *)NULL, (fd_set *)NULL, (struct timeval *) NULL);
+        if (counter < 0) /*error*/ exit(1);
+        if (counter == 0) continue; // Timeout, volta a esperar
+
+
+        // ==========================================
+        // A. TECLADO (Stdin)
+        // ==========================================
+        if (FD_ISSET(STDIN_FILENO, &rfds)) { // teclado, envia msg UDP
+
+            word_return = word_processor(my_node, current_command);
+            
+            if (word_return == 1) { 
+                continue; // Se houve um erro no processamento do comando, volta para o início do loop
+            }
+
+            if (strcmp(current_command->command, "x") == 0) {
+                strcpy(current_command->command, "re");
+                // por fazer - faz o remove edge final(loop de todos os vizinhos ativos)
+                for(int i = 0; i < 100; i++) {
+                    if(fd_edges[i] != -1) {
+                        current_command->id = i;
+                        handle_tcp_commands(my_node, current_command);
+                    }
+                }
+
+                if(my_node->is_registered) {
+                    // Se estiver registado, faz o leave final
+                    strcpy(current_command->command, "l"); // Executa leave final
+                }
+                
+                handle_udp_commands(my_node, current_command, myIP, myTCP); // faz o leave final
+                
+                printf("A sair...\n");
+                break;
+            }
+
+
+
+            contact_err_code = handle_udp_commands(my_node, current_command, myIP, myTCP);
+
+            // isto secalhar funciona universlamnet para tudo, se falha, pode so voltar e nem seguir para TCP?
+            if(contact_err_code == 1) {
+                // Se o contacto falhou, não vamos tentar processar o segmento TCP porque não temos os dados necessários
+                continue;
+            }
+
+            handle_tcp_commands(my_node, current_command);
+        }
+
+
+        // ==========================================
+        // B. PEDIDO DE CONEXÃO TCP (fd_tcp_listen)
+        // ==========================================
+        if (FD_ISSET(fd_tcp_listen, &rfds)) {
+
+            accept_connection();
+
+        }
+
+
+        // ==========================================
+        // C. LER MENSAGENS DOS VIZINHOS JÁ CONECTADOS
+        // ==========================================
+        for (int i = 0; i < 100; i++) {
+            if (fd_edges[i] != -1 && FD_ISSET(fd_edges[i], &rfds)) {
+                
+                char buffer[BUFFER_TCP_SIZE];
+                int bytes = read(fd_edges[i], buffer, sizeof(buffer) - 1);
+
+                if (bytes <= 0) { 
+                    // Se bytes == 0, o vizinho desligou-se normalmente (remove edge ou exit).
+                    // Se bytes == -1, a ligação caiu de forma bruta.
+                    printf("O nó %d desconectou-se (aresta removida).\n", i);
+                    close(fd_edges[i]);
+                    fd_edges[i] = -1; // Limpamos a aresta do nosso lado
+                    
+                } else {
+                    // Recebemos texto do vizinho!
+                    buffer[bytes] = '\0';
+                    printf("Recebido do nó %d: %s", i, buffer);
+                    
+                    process_tcp_message(my_node, i, buffer);
+                }
+            }
+        }
+    }
+
+    free(current_command);
+    free(my_node);
+
+    for (int i = 0; i < 100; i++) {
+        if (fd_edges[i] != -1) {
+            close(fd_edges[i]);
+            fd_edges[i] = -1;
+        }
+    }
+
+    freeaddrinfo(address_udp);
+
+    close(fd_udp);
+    close(fd_tcp_listen);
+
+    return;
+}
+
+
+
+int word_processor(NodeState *my_node, ParsedCommand *current_command) {
+    char buffer_teclado[64] = {0}; // Buffer para ler a linha do teclado
+
+    if (fgets(buffer_teclado, sizeof(buffer_teclado), stdin) != NULL) {
+        char command_first_w[16] = {0}; // Para guardar a primeira palavra do comando
+
+
+        if (sscanf(buffer_teclado, "%s", command_first_w) == 1) {
+
+            // Verificar join
+            if (strcmp(command_first_w, "j") == 0) {
+
+                if (sscanf(buffer_teclado, "%*s %d %d", &current_command->net, &current_command->id) != 2) {// get NET and ID 
+
+                    printf("Erro: Argumentos inválidos. Uso: join net id\n");
+                    return 1; // Retorna 1 para continuar
+                }
+                strcpy(current_command->command, "j"); 
+            }
+
+            // Verificar show neighbors
+            else if (strcmp(command_first_w, "n") == 0) {
+
+                if (sscanf(buffer_teclado, "%*s %d", &current_command->net) != 1) {
+                    printf("Erro: Argumentos inválidos. Uso: show neighbors net\n");
+                    return 1;
+                }
+                strcpy(current_command->command, "n");
+            }
+
+            // Verificar leave
+            else if (strcmp(command_first_w, "l") == 0) {
+                
+                if (sscanf(buffer_teclado, "%*s") != 0) {
+                    printf("Erro: Argumentos inválidos. Uso: leave\n");
+                    return 
+                    1; // Retorna 1 para continuar
+                }
+                strcpy(current_command->command, "l"); 
+            }
+
+            // Verificar exit
+            else if (strcmp(command_first_w, "x") == 0) {
+                strcpy(current_command->command, "x");
+            }
+
+            // Verificar add edge
+            else if(strcmp(command_first_w, "ae") == 0) {
+
+                if (sscanf(buffer_teclado, "%*s %d", &current_command->id) !=1) {
+                    printf("Erro: Argumentos inválidos. Uso: add edge id\n");
+                    return 1; // Retorna 1 para continuar
+                }
+                strcpy(current_command->command, "ae");
+            }
+
+            // Verificar remove edge
+            else if(strcmp(command_first_w, "re") == 0) {
+
+                if (sscanf(buffer_teclado, "%*s %d", &current_command->id) !=1) {
+                    printf("Erro: Argumentos inválidos. Uso: remove edge id\n");
+                    return 1; // Retorna 1 para continuar
+                }
+                strcpy(current_command->command, "re");
+            }
+
+            // Verificar show neighbors
+            else if (strcmp(command_first_w, "sg") == 0) {
+
+                if (sscanf(buffer_teclado, "%*s") != 0) {
+                    printf("Erro: Argumentos inválidos. Uso: show neighbors\n");
+                    return 1;
+                }
+                strcpy(current_command->command, "sg");
+            }
+
+            // Verificar announce
+            else if (strcmp(command_first_w, "a") == 0) {
+
+                if (sscanf(buffer_teclado, "%*s") != 0) {
+                    printf("Erro: Argumentos inválidos. Uso: announce\n");
+                    return 1;
+                }
+                strcpy(current_command->command, "a");
+            }
+
+            // Verificar show routing
+            else if (strcmp(command_first_w, "sr") == 0) {
+                // usado id para capturar nó de destino
+                if (sscanf(buffer_teclado, "%*s %d", &current_command->id) != 1) {
+                    printf("Erro: Argumentos inválidos. Uso: show routing dest\n");
+                    return 1;
+                }
+                strcpy(current_command->command, "sr");
+            }
+
+
+            else if (strcmp(command_first_w, "dj") == 0) {
+
+                if (sscanf(buffer_teclado, "%*s %d %d", &current_command->net, &current_command->id) != 1) {
+                    printf("Erro: Argumentos inválidos. Uso: direct join net id\n");
+                    return 1;
+                } else {
+                    my_node->net = current_command->net;
+                    my_node->id = current_command->id;
+
+                    my_node->is_registered = true;
+                }
+                strcpy(current_command->command, "dj");               
+            }
+
+            else if (strcmp(command_first_w, "dae") == 0) {
+
+                if (sscanf(buffer_teclado, "%*s %d %s %s", &current_command->id, current_command->tempTCP_IP, current_command->tempTCP_Port) != 1) {
+                    printf("Erro: Argumentos inválidos. Uso: direct add edge id idIP idTCP\n");
+                    return 1;
+                }
+
+                connect_to_node(my_node, current_command); // Tenta conectar diretamente ao nó, sem passar pelo servidor. Se falhar, a função já imprime a mensagem de erro.
+
+                strcpy(current_command->command, "dae");      
+            }
+
+            else {
+                printf("Comando desconhecido: %s\n", command_first_w);
+                return 1; // Retorna 1 para indicar erro
+            }  
+
+        } else {
+            // Entrada vazia apenas enter
+            return 1; // Retorna 1 para indicar erro
+        }
+    }
+    return 0; // Retorna 0 para indicar sucesso
+}
+
+
+int interface(int argc, char *argv[], char **myIP, char **myTCP, char **regIP, char **regUDP) 
+{
+    if (argc < 3 || argc > 5) {
+        printf("Uso: %s IP TCP [regIP] [regUDP]\n", argv[0]);
+        exit(1);
+    }
+
+    *myIP = argv[1];
+    *myTCP = argv[2];
+
+    if (argv[3] != NULL && argv[4] != NULL) {
+        *regIP = argv[3];
+        *regUDP = argv[4];
+    }
+
+    return 0;
+}
