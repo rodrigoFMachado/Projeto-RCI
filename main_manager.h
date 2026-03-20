@@ -27,6 +27,7 @@ typedef struct ParsedCommand_{
 
     char tempTCP_IP[16]; // Para guardar o IP temporário recebido do servidor para um contacto
     char tempTCP_Port[6]; // Para guardar o porto temporário recebido do servidor para um contacto
+    char message[129]; // Para guardar a mensagem a enviar no comando "message"
 
 } ParsedCommand;
 

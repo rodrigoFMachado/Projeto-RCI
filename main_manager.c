@@ -11,7 +11,7 @@
 
 
 #include "main_manager.h"
-#include "transport_handling.h"
+#include "communication_handling.h"
 #include "network_apps.h"
 
 
@@ -135,7 +135,7 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         for (int i = 0; i < 100; i++) {
             if (fd_edges[i] != -1 && FD_ISSET(fd_edges[i], &rfds)) {
                 
-                char buffer[BUFFER_TCP_SIZE];
+                char buffer[2*BUFFER_TCP_SIZE];  // mensagem total (+que 128)
                 int bytes = read(fd_edges[i], buffer, sizeof(buffer) - 1);
 
                 if (bytes <= 0) { 
@@ -150,7 +150,7 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                     buffer[bytes] = '\0';
                     printf("Recebido do nó %d: %s", i, buffer);
                     
-                    process_tcp_message(my_node, i, buffer);
+                    process_tcp_message(current_command, i, buffer);
                 }
             }
         }
@@ -272,10 +272,40 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
                 strcpy(current_command->command, "sr");
             }
 
+            // Verificar start monitor 
+            else if (strcmp(command_first_w, "sm") == 0) {
+                // usado id para capturar nó de destino
+                if (sscanf(buffer_teclado, "%*s") != 0) {
+                    printf("Erro: Argumentos inválidos. Uso: start monitor\n");
+                    return 1;
+                }
+                strcpy(current_command->command, "sm");
+            }
 
+            // Verificar end monitor 
+            else if (strcmp(command_first_w, "em") == 0) {
+                // usado id para capturar nó de destino
+                if (sscanf(buffer_teclado, "%*s") != 0) {
+                    printf("Erro: Argumentos inválidos. Uso: end monitor\n");
+                    return 1;
+                }
+                strcpy(current_command->command, "em");
+            }
+
+            // Verificar message 
+            else if (strcmp(command_first_w, "m") == 0) {
+
+                if (sscanf(buffer_teclado, "%*s %d %s", &current_command->id, current_command->message) != 2) {
+                    printf("Erro: Argumentos inválidos. Uso: message dest message\n");
+                    return 1;
+                }
+                strcpy(current_command->command, "m");
+            }
+
+            // Verificar direct join
             else if (strcmp(command_first_w, "dj") == 0) {
 
-                if (sscanf(buffer_teclado, "%*s %d %d", &current_command->net, &current_command->id) != 1) {
+                if (sscanf(buffer_teclado, "%*s %d %d", &current_command->net, &current_command->id) != 2) {
                     printf("Erro: Argumentos inválidos. Uso: direct join net id\n");
                     return 1;
                 } else {
@@ -287,9 +317,10 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
                 strcpy(current_command->command, "dj");               
             }
 
+            // Verificar direct add edge
             else if (strcmp(command_first_w, "dae") == 0) {
 
-                if (sscanf(buffer_teclado, "%*s %d %s %s", &current_command->id, current_command->tempTCP_IP, current_command->tempTCP_Port) != 1) {
+                if (sscanf(buffer_teclado, "%*s %d %s %s", &current_command->id, current_command->tempTCP_IP, current_command->tempTCP_Port) != 3) {
                     printf("Erro: Argumentos inválidos. Uso: direct add edge id idIP idTCP\n");
                     return 1;
                 }
