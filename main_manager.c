@@ -150,7 +150,7 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                     buffer[bytes] = '\0';
                     printf("Recebido do nó %d: %s", i, buffer);
                     
-                    process_tcp_message(current_command, i, buffer);
+                    process_tcp_message(my_node, current_command, i, buffer);
                 }
             }
         }

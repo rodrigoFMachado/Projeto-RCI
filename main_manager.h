@@ -1,6 +1,8 @@
 #ifndef MAIN_MANAGER_H
 #define MAIN_MANAGER_H
 
+#include <stdbool.h>
+
 
 extern int fd_udp, fd_tcp_listen; // Sockets e endereços globais
 extern int fd_edges[100]; // fd de conexões TCP ativas, max 100 conexões
@@ -14,7 +16,7 @@ typedef struct NodeState_{
 
     int dist[100];       // Distância para cada destino (inicia tudo a infinito/999)
     int succ[100];       // Vizinho de expedição (inicia tudo a -1)
-    bool state[100];      // Estado: 0 (expedição) ou 1 (coordenação)
+    int state[100];      // Estado: 0 (expedição) ou 1 (coordenação)
     
     int succ_coord[100]; // Quem causou a minha coordenação
     int coord[100][100]; // Matriz de coordenação: coord[destino][vizinho] = 1 se o vizinho é coordenador para o destino
