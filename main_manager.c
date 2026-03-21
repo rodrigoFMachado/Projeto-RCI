@@ -14,7 +14,7 @@
 #include "communication_handling.h"
 #include "network_apps.h"
 
-
+#define INVALID_NUMBER -1
 
 int fd_udp, fd_tcp_listen; // Sockets e endereços globais
 int fd_edges[100]; // fd de conexões TCP ativas, max 100 conexões
@@ -43,12 +43,12 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         exit(1);
     }
 
-    NodeState_inicialization(my_node, 0, -1, -1); // Inicializa o estado do nó como não registado
+    NodeState_inicialization(my_node, false, INVALID_NUMBER, INVALID_NUMBER); // Inicializa o estado do nó como não registado
 
     address_udp = udp_starter(regIP, regUDP);
     tcp_starter(myIP, myTCP); 
 
-    for (int i = 0; i < 100; i++) fd_edges[i] = -1;
+    for (int i = 0; i < 100; i++) fd_edges[i] = INVALID_NUMBER;
 
     while (1) {
         FD_ZERO(&rfds);
@@ -62,7 +62,7 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
         // Adicionar conexões TCP ativas (fd_edges)
         for (int n = 0; n < 100; n++) { 
-            if (fd_edges[n] != -1) {
+            if (fd_edges[n] != INVALID_NUMBER) {
                 FD_SET(fd_edges[n], &rfds);
                 if (fd_edges[n] > maxfd) maxfd = fd_edges[n];
             }
@@ -88,7 +88,7 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                 strcpy(current_command->command, "re");
                 // por fazer - faz o remove edge final(loop de todos os vizinhos ativos)
                 for(int i = 0; i < 100; i++) {
-                    if(fd_edges[i] != -1) {
+                    if(fd_edges[i] != INVALID_NUMBER) {
                         current_command->id = i;
                         handle_tcp_commands(my_node, current_command);
                     }
@@ -133,7 +133,7 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         // C. LER MENSAGENS DOS VIZINHOS JÁ CONECTADOS
         // ==========================================
         for (int i = 0; i < 100; i++) {
-            if (fd_edges[i] != -1 && FD_ISSET(fd_edges[i], &rfds)) {
+            if (fd_edges[i] != INVALID_NUMBER && FD_ISSET(fd_edges[i], &rfds)) {
                 
                 char buffer[2*BUFFER_TCP_SIZE];  // mensagem total (+que 128)
                 int bytes = read(fd_edges[i], buffer, sizeof(buffer) - 1);
@@ -146,7 +146,7 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                     handle_link_drop(my_node, i); // Processar a queda da ligação no protocolo de encaminhamento
 
                     close(fd_edges[i]);
-                    fd_edges[i] = -1; // Limpamos a aresta do nosso lado
+                    fd_edges[i] = INVALID_NUMBER; // Limpamos a aresta do nosso lado
                     
                 } else {
                     // Recebemos texto do vizinho!
@@ -163,9 +163,9 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     free(my_node);
 
     for (int i = 0; i < 100; i++) {
-        if (fd_edges[i] != -1) {
+        if (fd_edges[i] != INVALID_NUMBER) {
             close(fd_edges[i]);
-            fd_edges[i] = -1;
+            fd_edges[i] = INVALID_NUMBER;
         }
     }
 

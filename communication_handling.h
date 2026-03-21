@@ -13,10 +13,6 @@ struct addrinfo *udp_starter(char *regIP, char *regUDP);
 
 void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command);
 
-void process_tcp_message(NodeState *my_node, ParsedCommand *current_command, int neighbor_id, char *buffer);
-
-void NodeState_inicialization(NodeState *my_node, int joined_state, int net, int id);
-
 void connect_to_node(NodeState *my_node, ParsedCommand *current_command);
 
 void accept_connection(void);

@@ -10,6 +10,7 @@
 #include "main_manager.h"
 #include "network_apps.h"
 
+#define INVALID_NUMBER -1
 #define INFINITO 999
 
 
@@ -266,30 +267,32 @@ void process_UNCOORD(NodeState *my_node, int neighbor_id, int dest) {
 }
 
 
-void NodeState_inicialization(NodeState *my_node, int joined_state, int net, int id) {
+void NodeState_inicialization(NodeState *my_node, bool joined_state, int net, int id) {
 
-    if (joined_state == 1){
+    if (!joined_state){
+        my_node->is_registered = false;
+        my_node->net = INVALID_NUMBER;
+        my_node->id = INVALID_NUMBER;        
+
+    } else {
         my_node->is_registered = true;
         my_node->net = net;
         my_node->id = id;
         my_node->dist[id] = 0;
         my_node->succ[id] = id;
         return;
-    }else{
-        my_node->is_registered = false;
-        my_node->net = -1;
-        my_node->id = -1;
     }
 
     for (int i = 0; i < 100; i++) {
         my_node->dist[i] = INFINITO; // Distância inicial é infinito
-        my_node->succ[i] = -1;
+        my_node->succ[i] = INVALID_NUMBER;
         my_node->state[i] = 0;
-        my_node->succ_coord[i] = -1;
+        my_node->succ_coord[i] = INVALID_NUMBER;
 
         for (int j = 0; j < 100; j++) {
-            my_node->coord[i][j] = -1; // -1 para indicar "sem coordenador" ou "nenhum"
+            my_node->coord[i][j] = INVALID_NUMBER; // INVALID_NUMBER para indicar "sem coordenador" ou "nenhum"
         }
     }
 
+    return;
 }
