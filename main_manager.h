@@ -7,6 +7,7 @@
 extern int fd_udp, fd_tcp_listen; // Sockets e endereços globais
 extern int fd_edges[100]; // fd de conexões TCP ativas, max 100 conexões
 extern struct addrinfo *address_udp; // Endereços globais para UDP e TCP
+extern bool routing_monitor_active; // Monitorização das mensagens de encaminhamento
 
 
 typedef struct NodeState_{

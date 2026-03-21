@@ -291,6 +291,12 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
                 write(fd_edges[i], announce_msg, strlen(announce_msg));
             }
         }
+    } else if (strcmp(current_command->command, "sm") == 0) {
+        routing_monitor_active = true;
+        printf("Monitorização de encaminhamento ativada.\n");
+    } else if (strcmp(current_command->command, "em") == 0) {
+        routing_monitor_active = false;
+        printf("Monitorização de encaminhamento desativada.\n");
     } else if (strcmp(current_command->command, "sr") == 0) {
         int dest = current_command->id;
 

@@ -79,6 +79,9 @@ void process_tcp_message(NodeState *my_node, ParsedCommand *current_command, int
             } else if (n < 0 || n >= INFINITO) { // Assumindo que INFINITO é 999
                 printf("Aviso: ROUTE com distância inválida recebida do nó %d.\n", neighbor_id);
             } else {
+                if (routing_monitor_active) {
+                    printf("Recebido do nó %d: %s\n", neighbor_id, line);
+                }
                 process_ROUTE(my_node, neighbor_id, dest, n);
             }
 
@@ -86,6 +89,9 @@ void process_tcp_message(NodeState *my_node, ParsedCommand *current_command, int
             if (dest < 0 || dest >= 100) {
                 printf("Aviso: COORD com destino inválido recebida do nó %d.\n", neighbor_id);
             } else {
+                if (routing_monitor_active) {
+                    printf("Recebido do nó %d: %s\n", neighbor_id, line);
+                }
                 process_COORD(my_node, neighbor_id, dest);
             }
 
@@ -93,6 +99,9 @@ void process_tcp_message(NodeState *my_node, ParsedCommand *current_command, int
             if (dest < 0 || dest >= 100) {
                 printf("Aviso: UNCOORD com destino inválido recebida do nó %d.\n", neighbor_id);
             } else {
+                if (routing_monitor_active) {
+                    printf("Recebido do nó %d: %s\n", neighbor_id, line);
+                }
                 process_UNCOORD(my_node, neighbor_id, dest);
             }
 
@@ -134,7 +143,9 @@ void handle_link_drop(NodeState *my_node, int dropped_neighbor) {
             my_node->dist[dest] = INFINITO;        // Distância passa a infinito
             my_node->succ[dest] = -1;
 
-            printf("Ligação caiu! Entramos em COORD para o destino %d.\n", dest);
+            if (routing_monitor_active) {
+                printf("Ligação caiu! Entramos em COORD para o destino %d.\n", dest);
+            }
 
             // Avisar todos os vizinhos (ativos) que a rota caiu e marcá-los na matriz
             snprintf(coord_msg, sizeof(coord_msg), "COORD %d\n", dest);
@@ -191,8 +202,10 @@ void process_ROUTE(NodeState *my_node, int neighbor_id, int dest, int n) {
         if (my_node->state[dest] == 0) {
             snprintf(route_msg, sizeof(route_msg), "ROUTE %d %d\n", dest, my_node->dist[dest]);
             send_tcp_to_all_neighbors(route_msg);
-            printf("ROUTE melhorou para o destino %d via nó %d com distância %d.\n",
-                   dest, neighbor_id, my_node->dist[dest]);
+            if (routing_monitor_active) {
+                printf("ROUTE melhorou para o destino %d via nó %d com distância %d.\n",
+                       dest, neighbor_id, my_node->dist[dest]);
+            }
         }
     }
 }
@@ -237,7 +250,9 @@ void process_COORD(NodeState *my_node, int neighbor_id, int dest) {
 
         snprintf(coord_msg, sizeof(coord_msg), "COORD %d\n", dest);
         send_tcp_to_all_neighbors(coord_msg);
-        printf("Nó entrou em coordenação relativamente ao destino %d.\n", dest);
+        if (routing_monitor_active) {
+            printf("Nó entrou em coordenação relativamente ao destino %d.\n", dest);
+        }
     }
 }
 

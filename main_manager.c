@@ -19,6 +19,7 @@
 int fd_udp, fd_tcp_listen; // Sockets e endereços globais
 int fd_edges[100]; // fd de conexões TCP ativas, max 100 conexões
 struct addrinfo *address_udp; // Endereços globais para UDP e TCP
+bool routing_monitor_active = false; // Por omissão, as mensagens de encaminhamento não são mostradas
 
 
 
@@ -163,8 +164,6 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                 } else {
                     // Recebemos texto do vizinho!
                     buffer[bytes] = '\0';
-                    printf("Recebido do nó %d: %s", i, buffer);
-                    
                     process_tcp_message(my_node, current_command, i, buffer);
                 }
             }
