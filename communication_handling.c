@@ -18,6 +18,7 @@
 #define UDP_NODES   "NODES"
 #define UDP_CONTACT "CONTACT"
 #define UDP_REG     "REG"
+#define INVALID_NUMBER -1
 
 // NODES opcodes
 #define OP_NODES_REQ    0  // Pede lista de nós 
@@ -270,11 +271,11 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         
         if (fd_edges[current_command->id] != -1) {
 
-            handle_link_drop(my_node, current_command->id); // Processar a queda da ligação no protocolo de encaminhamento
-
             close(fd_edges[current_command->id]);
-            fd_edges[current_command->id] = -1; // Liberta o slot!
+            fd_edges[current_command->id] = INVALID_NUMBER; // Liberta o slot!
             printf("Aresta com o nó %d removida.\n", current_command->id);
+
+            handle_link_drop(my_node, current_command->id); // Processar a queda da ligação no protocolo de encaminhamento
 
         } else {
             printf("Erro: Não existe aresta ativa com o nó %d.\n", current_command->id);

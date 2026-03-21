@@ -199,7 +199,7 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
                 strcpy(current_command->command, "j"); 
             }
 
-            // Verificar show neighbors
+            // Verificar show nodes
             else if (strcmp(command_first_w, "n") == 0) {
 
                 if (sscanf(buffer_teclado, "%*s %d", &current_command->net) != 1) {
