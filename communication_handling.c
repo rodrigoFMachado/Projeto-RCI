@@ -65,7 +65,7 @@ int handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char
             if (received_tid == tid) {
 
                 if (received_op == OP_REG_RES_OK) { // Expected: 1
-                    NodeState_inicialization(my_node, 1, current_command->net, current_command->id); // Atualiza o estado do nó para registado com os dados corretos
+                    NodeState_inicialization(my_node, true, current_command->net, current_command->id); // Atualiza o estado do nó para registado com os dados corretos
 
                     printf("Registo bem-sucedido do nó %d na rede %d.\n", my_node->id, my_node->net);
 
