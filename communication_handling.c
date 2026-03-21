@@ -19,6 +19,7 @@
 #define UDP_CONTACT "CONTACT"
 #define UDP_REG     "REG"
 #define INVALID_NUMBER -1
+#define INFINITO 999
 
 // NODES opcodes
 #define OP_NODES_REQ    0  // Pede lista de nós 
@@ -289,6 +290,54 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
             if (fd_edges[i] != -1) {
                 write(fd_edges[i], announce_msg, strlen(announce_msg));
             }
+        }
+    } else if (strcmp(current_command->command, "sr") == 0) {
+        int dest = current_command->id;
+
+        if (dest < 0 || dest >= 100) {
+            printf("Erro: Destino inválido.\n");
+            return;
+        }
+
+        printf("Routing para o destino %d:\n", dest);
+
+        if (my_node->state[dest] == 0) {
+            printf("Estado: expedição\n");
+
+            if (my_node->dist[dest] == INFINITO || my_node->succ[dest] == INVALID_NUMBER) {
+                printf("Distância: infinito\n");
+                printf("Vizinho de expedição: nenhum\n");
+            } else {
+                printf("Distância: %d\n", my_node->dist[dest]);
+                printf("Vizinho de expedição: %d\n", my_node->succ[dest]);
+            }
+        } else if (my_node->state[dest] == 1) {
+            printf("Estado: coordenação\n");
+
+            if (my_node->succ_coord[dest] == INVALID_NUMBER) {
+                printf("succ_coord: nenhum\n");
+            } else {
+                printf("succ_coord: %d\n", my_node->succ_coord[dest]);
+            }
+
+            printf("Coordenação em curso com: ");
+            bool exists = false;
+            for (int i = 0; i < 100; i++) {
+                if (fd_edges[i] != INVALID_NUMBER && my_node->coord[dest][i] == 1) {
+                    if (exists) {
+                        printf(", ");
+                    }
+                    printf("%d", i);
+                    exists = true;
+                }
+            }
+
+            if (!exists) {
+                printf("nenhum");
+            }
+            printf("\n");
+        } else {
+            printf("Estado desconhecido: %d\n", my_node->state[dest]);
         }
     }
 
