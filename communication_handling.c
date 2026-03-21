@@ -44,7 +44,7 @@
 /// @param current_command - Contém o comando processado do usuário, com os campos preenchidos (command, net, id, etc)
 /// @param myIP - Endereço IP do nó
 /// @param myTCP - Porta TCP do nó
-int handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP) {
+bool handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP) {
     int tid = rand() % 1000; // Gerar um TID aleatório entre 0 e 999
 
     char udp_message[128+1]; // mensagem UDP com máximo de 128 caracteres
@@ -55,7 +55,7 @@ int handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char
 
         if(my_node->is_registered) {
             printf("Erro: Já está registado. A cada contacto pode estar associado apenas um nó.\n");
-            return 1;
+            return true;
         }
 
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d %s %s", UDP_REG, tid, OP_REG_REQ, current_command->net, current_command->id, myIP, myTCP);
@@ -74,11 +74,11 @@ int handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char
 
                 } else if (received_op == OP_REG_RES_FULL) { // Expected: 2
                     printf("Erro: Base de dados cheia. Não foi possível registar o nó.\n");
-                    return 1;
+                    return true;
                 
                 } else {
                     printf("Erro: Resposta inesperada do servidor.\n");
-                    return 1;
+                    return true;
                 }
             }
         }
@@ -86,11 +86,6 @@ int handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char
 
 
     else if (strcmp(current_command->command, "l") == 0) { // leave
-
-        if(!my_node->is_registered) {
-            printf("Erro: Não está registado. Não pode executar 'leave'.\n");
-            return 1;
-        }
 
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d", UDP_REG, tid, OP_UNREG_REQ, my_node->net, my_node->id);
 
@@ -108,7 +103,7 @@ int handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char
                 }
                 else {
                     printf("Erro: Resposta inesperada do servidor.\n");
-                    return 1;
+                    return true;
                 }
             }
         }
@@ -130,7 +125,7 @@ int handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char
                     printf("Nós na rede %d:\n %s\n", current_command->net, udp_message + 16); // Imprime a lista de nós (tudo depois dos 16 primeiros caracteres "NODES TID OP NET ")
                 } else {
                     printf("Erro: Resposta inesperada do servidor.\n");
-                    return 1;
+                    return true;
                 }
             }
         }
@@ -141,12 +136,12 @@ int handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char
 
         if(!my_node->is_registered) {
             printf("Erro: Não está registado. Não pode executar 'add'.\n");
-            return 1;
+            return true;
         }
 
         if(current_command->id == my_node->id) {
             printf("Erro: Não pode criar uma aresta para si mesmo.\n");
-            return 1;
+            return true;
         }
 
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d", UDP_CONTACT, tid, OP_CONTACT_REQ, my_node->net, current_command->id);
@@ -165,24 +160,19 @@ int handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char
                 
                 else if (received_op == OP_CONTACT_NO_REG) { // Expected: 2
                     printf("Erro: Nó %d não registado. Não foi possível obter o contacto.\n", current_command->id);
-                    return 1;
+                    return true;
                 } 
                 
                 else {
-                    printf("Erro: Resposta inesperada do servidor.\n");
-                    return 1;
+                    printf("Erro inesperado ao tentar obter o contacto.\n");
+                    return true;
                 }
             }
         }
 
     }   
 
-
-    else if (strcmp(current_command->command, "x") == 0) {
-        return 0;
-    }
-
-    return 0;
+    return false; // Comando UDP processado sem erros fatais
 
 }
 
@@ -227,7 +217,7 @@ struct addrinfo *udp_starter(char *regIP, char *regUDP) {
     if(fd_udp==-1)/*error*/exit(1);
 
     struct timeval read_timeout;
-    read_timeout.tv_sec = 5; // Espera no máximo 5 segundos pela resposta do professor
+    read_timeout.tv_sec = 10; // Espera no máximo 10 segundos pela resposta do professor
     read_timeout.tv_usec = 0;
     
     if (setsockopt(fd_udp, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof(read_timeout)) < 0) {
@@ -249,9 +239,23 @@ struct addrinfo *udp_starter(char *regIP, char *regUDP) {
 
 void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
 
-    if (strcmp(current_command->command, "ae") == 0) {
+
+    if (strcmp(current_command->command, "l") == 0) {
+
+        strcpy(current_command->command, "re");
+        // por fazer - faz o remove edge final(loop de todos os vizinhos ativos)
+        for(int i = 0; i < 100; i++) {
+            if(fd_edges[i] != INVALID_NUMBER) {
+                current_command->id = i;
+                handle_tcp_commands(my_node, current_command);
+            }
+        }
+
+
+    } else if (strcmp(current_command->command, "ae") == 0) {
         
         connect_to_node(my_node, current_command);
+
 
     } else if(strcmp(current_command->command, "sg") == 0){
         // usamos a estrutura local de fd_edges para mostrar as ligações ativas
@@ -268,6 +272,7 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
             printf("Nenhum vizinho ativo.\n");
         }
 
+
     } else if (strcmp(current_command->command, "re") == 0) {
         
         if (fd_edges[current_command->id] != -1) {
@@ -282,6 +287,7 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
             printf("Erro: Não existe aresta ativa com o nó %d.\n", current_command->id);
         }
 
+
     } else if (strcmp(current_command->command, "a") == 0) {
         char announce_msg[32];
         sprintf(announce_msg, "ROUTE %d %d\n", my_node->id, 0);
@@ -291,6 +297,8 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
                 write(fd_edges[i], announce_msg, strlen(announce_msg));
             }
         }
+
+
     } else if (strcmp(current_command->command, "sr") == 0) {
         int dest = current_command->id;
 
@@ -311,6 +319,7 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
                 printf("Distância: %d\n", my_node->dist[dest]);
                 printf("Vizinho de expedição: %d\n", my_node->succ[dest]);
             }
+
         } else if (my_node->state[dest] == 1) {
             printf("Estado: coordenação\n");
 
@@ -336,6 +345,7 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
                 printf("nenhum");
             }
             printf("\n");
+
         } else {
             printf("Estado desconhecido: %d\n", my_node->state[dest]);
         }
