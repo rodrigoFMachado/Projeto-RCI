@@ -142,6 +142,9 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                     // Se bytes == 0, o vizinho desligou-se normalmente (remove edge ou exit).
                     // Se bytes == -1, a ligação caiu de forma bruta.
                     printf("O nó %d desconectou-se (aresta removida).\n", i);
+
+                    handle_link_drop(my_node, i); // Processar a queda da ligação no protocolo de encaminhamento
+
                     close(fd_edges[i]);
                     fd_edges[i] = -1; // Limpamos a aresta do nosso lado
                     

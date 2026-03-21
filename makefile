@@ -4,7 +4,7 @@ CFLAGS = -g -Wall -Wextra
 CFLAGS_RELEASE = -O3  -Wall -Wextra
 
 # Source files and target
-SRCS = OWR.c main_manager.c transport_handling.c network_apps.c
+SRCS = OWR.c main_manager.c communication_handling.c network_apps.c
 OBJS = $(SRCS:.c=.o)
 
 TARGET = OWR
