@@ -55,70 +55,66 @@ static bool coord_finished_for_dest(NodeState *my_node, int dest) {
 
 void process_tcp_message(NodeState *my_node, ParsedCommand *current_command, int neighbor_id, char *raw_tcp_message) {
     int origin, dest, n;
+    char *saveptr; // Ponteiro de estado obrigatório para o strtok_r funcionar bem
 
-    if (sscanf(raw_tcp_message, "ROUTE %d %d", &dest, &n) == 2)
-    {
-        if (dest < 0 || dest >= 100)
-        {
+    // 1. A primeira chamada ao strtok_r corta a primeira fatia até ao primeiro '\n'
+    char *line = strtok_r(raw_tcp_message, "\n", &saveptr);
 
-            printf("Aviso: ROUTE com destino inválido recebida do nó %d.\n", neighbor_id);
-        }
-        else if (n < 0 || n == INFINITO)
-        {
+    // 2. O ciclo while garante que processamos TODAS as fatias coladas no buffer
+    while (line != NULL) {
 
-            printf("Aviso: ROUTE com distância inválida recebida do nó %d.\n", neighbor_id);
+        // Limpeza de segurança: Se estiveres a testar com telnet/netcat no Windows, 
+        // às vezes fica um '\r' (carriage return) no final da linha. Isto limpa-o.
+        int len = strlen(line);
+        if (len > 0 && line[len - 1] == '\r') {
+            line[len - 1] = '\0';
         }
-        else
-        {
-            process_ROUTE(my_node, neighbor_id, dest, n);
-        }
-    }
-    else if (sscanf(raw_tcp_message, "COORD %d", &dest) == 1)
-    {
-        if (dest < 0 || dest >= 100)
-        {
 
-            printf("Aviso: COORD com destino inválido recebida do nó %d.\n", neighbor_id);
-        }
-        else
-        {
-            process_COORD(my_node, neighbor_id, dest);
-        }
-    }
-    else if (sscanf(raw_tcp_message, "UNCOORD %d", &dest) == 1)
-    {
-        if (dest < 0 || dest >= 100)
-        {
+        // AGORA USAMOS A VARIÁVEL 'line' EM VEZ DO 'raw_tcp_message' GIGANTE!
 
-            printf("Aviso: UNCOORD com destino inválido recebida do nó %d.\n", neighbor_id);
-        }
-        else
-        {
-            process_UNCOORD(my_node, neighbor_id, dest);
-        }
-    }
-    else if (sscanf(raw_tcp_message, "CHAT %d %d %s", &origin, &dest, current_command->message) == 3)
-    {
-        if (origin < 0 || origin >= 100)
-        {
+        if (sscanf(line, "ROUTE %d %d", &dest, &n) == 2) {
+            if (dest < 0 || dest >= 100) {
+                printf("Aviso: ROUTE com destino inválido recebida do nó %d.\n", neighbor_id);
+            } else if (n < 0 || n >= INFINITO) { // Assumindo que INFINITO é 999
+                printf("Aviso: ROUTE com distância inválida recebida do nó %d.\n", neighbor_id);
+            } else {
+                process_ROUTE(my_node, neighbor_id, dest, n);
+            }
 
-            printf("Aviso: CHAT com origem inválida recebida do nó %d.\n", neighbor_id);
-        }
-        else if (dest < 0 || dest >= 100)
-        {
+        } else if (sscanf(line, "COORD %d", &dest) == 1) {
+            if (dest < 0 || dest >= 100) {
+                printf("Aviso: COORD com destino inválido recebida do nó %d.\n", neighbor_id);
+            } else {
+                process_COORD(my_node, neighbor_id, dest);
+            }
 
-            printf("Aviso: CHAT com destino inválido recebida do nó %d.\n", neighbor_id);
-        }
-        else
-        {
+        } else if (sscanf(line, "UNCOORD %d", &dest) == 1) {
+            if (dest < 0 || dest >= 100) {
+                printf("Aviso: UNCOORD com destino inválido recebida do nó %d.\n", neighbor_id);
+            } else {
+                process_UNCOORD(my_node, neighbor_id, dest);
+            }
 
-            // Mensagem TCP válida do tipo CHAT recebida do nó neighbor_id.
-            // tratar de processo pos receber uma mensagem CHAT aqui. Por agora, só imprimimos a mensagem de debug.
+        // ATENÇÃO AQUI: Usei %[^\n] em vez de %s para poder ler frases com espaços!
+        // O guião diz que a mensagem de CHAT tem no máximo 128 caracteres [cite: 96]
+        } else if (sscanf(line, "CHAT %d %d %[^\n]", &origin, &dest, current_command->message) == 3) {
+            if (origin < 0 || origin >= 100) {
+                printf("Aviso: CHAT com origem inválida recebida do nó %d.\n", neighbor_id);
+            } else if (dest < 0 || dest >= 100) {
+                printf("Aviso: CHAT com destino inválido recebida do nó %d.\n", neighbor_id);
+            } else {
+                // Mensagem TCP válida do tipo CHAT recebida.
+                printf("Mensagem recebida do nó %d: %s\n", origin, current_command->message);
+                // process_CHAT(my_node, neighbor_id, origin, dest, current_command->message);
+            }
+
+        } else if (strcmp(line, "") != 0) {
+            // Só imprime aviso se a linha não for puramente vazia
+            printf("Aviso: Mensagem TCP mal formatada recebida do nó %d: %s\n", neighbor_id, line);
         }
-    }
-    else
-    {
-        printf("Aviso: Mensagem TCP mal formatada recebida do nó %d: %s\n", neighbor_id, raw_tcp_message);
+
+        // 3. Pedimos ao strtok_r a PRÓXIMA fatia do mesmo buffer original
+        line = strtok_r(NULL, "\n", &saveptr);
     }
 }
 

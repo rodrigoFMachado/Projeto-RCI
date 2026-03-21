@@ -316,8 +316,7 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
                     my_node->id = current_command->id;
 
                     my_node->is_registered = true;
-                }
-                strcpy(current_command->command, "dj");               
+                }              
             }
 
             // Verificar direct add edge
@@ -329,8 +328,7 @@ int word_processor(NodeState *my_node, ParsedCommand *current_command) {
                 }
 
                 connect_to_node(my_node, current_command); // Tenta conectar diretamente ao nó, sem passar pelo servidor. Se falhar, a função já imprime a mensagem de erro.
-
-                strcpy(current_command->command, "dae");      
+   
             }
 
             else {
