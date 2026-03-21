@@ -103,6 +103,18 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                 
                 printf("A sair...\n");
                 break;
+            }else if (strcmp(current_command->command, "l") == 0){
+                strcpy(current_command->command, "re");
+                //faz o remove edge final(loop de todos os vizinhos ativos)
+                for(int i = 0; i < 100; i++) {
+                    if(fd_edges[i] != INVALID_NUMBER) {
+                        current_command->id = i;
+                        handle_tcp_commands(my_node, current_command);
+                    }
+                }
+                strcpy(current_command->command, "l");
+                handle_udp_commands(my_node, current_command, myIP, myTCP); // faz o leave final
+                continue;
             }
 
 
