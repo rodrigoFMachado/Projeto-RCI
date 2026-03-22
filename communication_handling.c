@@ -310,6 +310,41 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         printf("Monitorização de encaminhamento desativada.\n");
 
         
+    } else if (strcmp(current_command->command, "m") == 0) {
+        int dest = current_command->id;
+        int next_hop;
+        char chat_msg[160];
+
+        if (!my_node->is_registered) {
+            printf("Erro: Não está registado. Não pode executar 'message'.\n");
+            return;
+        }
+
+        if (dest < 0 || dest >= 100) {
+            printf("Erro: Destino inválido.\n");
+            return;
+        }
+
+        if (dest == my_node->id) {
+            printf("Mensagem recebida do nó %d: %s\n", my_node->id, current_command->message);
+            return;
+        }
+
+        if (my_node->state[dest] != 0 || my_node->dist[dest] == INFINITO) {
+            printf("Erro: Não existe rota ativa para o nó %d.\n", dest);
+            return;
+        }
+
+        next_hop = my_node->succ[dest];
+        if (next_hop == INVALID_NUMBER || fd_edges[next_hop] == INVALID_NUMBER) {
+            printf("Erro: Não existe next hop ativo para o nó %d.\n", dest);
+            return;
+        }
+
+        snprintf(chat_msg, sizeof(chat_msg), "CHAT %d %d %s\n", my_node->id, dest, current_command->message);
+        send_tcp_to_neighbor(next_hop, chat_msg);
+        printf("Mensagem enviada para o nó %d via nó %d.\n", dest, next_hop);
+
     } else if (strcmp(current_command->command, "sr") == 0) {
         int dest = current_command->id;
 

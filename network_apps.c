@@ -20,6 +20,8 @@ void process_COORD(NodeState *my_node, int neighbor_id, int dest);
 
 void process_UNCOORD(NodeState *my_node, int neighbor_id, int dest);
 
+void process_CHAT(NodeState *my_node, int neighbor_id, int origin, int dest, const char *message);
+
 void send_tcp_to_neighbor(int neighbor_id, const char *message) {
     if (neighbor_id < 0 || neighbor_id >= 100) {
         return;
@@ -107,15 +109,16 @@ void process_tcp_message(NodeState *my_node, ParsedCommand *current_command, int
 
         // ATENÇÃO AQUI: Usei %[^\n] em vez de %s para poder ler frases com espaços!
         // O guião diz que a mensagem de CHAT tem no máximo 128 caracteres [cite: 96]
-        } else if (sscanf(line, "CHAT %d %d %[^\n]", &origin, &dest, current_command->message) == 3) {
+        } else if (sscanf(line, "CHAT %d %d %128[^\n]", &origin, &dest, current_command->message) == 3) {
             if (origin < 0 || origin >= 100) {
                 printf("Aviso: CHAT com origem inválida recebida do nó %d.\n", neighbor_id);
             } else if (dest < 0 || dest >= 100) {
                 printf("Aviso: CHAT com destino inválido recebida do nó %d.\n", neighbor_id);
             } else {
-                // Mensagem TCP válida do tipo CHAT recebida.
-                printf("Mensagem recebida do nó %d: %s\n", origin, current_command->message);
-                // process_CHAT(my_node, neighbor_id, origin, dest, current_command->message);
+                if (routing_monitor_active) {
+                    printf("Recebido do nó %d: %s\n", neighbor_id, line);
+                }
+                process_CHAT(my_node, neighbor_id, origin, dest, current_command->message);
             }
 
         } else if (strcmp(line, "") != 0) {
@@ -125,6 +128,40 @@ void process_tcp_message(NodeState *my_node, ParsedCommand *current_command, int
 
         // 3. Pedimos ao strtok_r a PRÓXIMA fatia do mesmo buffer original
         line = strtok_r(NULL, "\n", &saveptr);
+    }
+}
+
+
+void process_CHAT(NodeState *my_node, int neighbor_id, int origin, int dest, const char *message) {
+    char chat_msg[160];
+    int next_hop;
+
+    if (dest == my_node->id) {
+        printf("Mensagem recebida do nó %d: %s\n", origin, message);
+        return;
+    }
+
+    if (my_node->state[dest] != 0 || my_node->dist[dest] == INFINITO) {
+        printf("Aviso: Sem rota ativa para reencaminhar CHAT de %d para %d.\n", origin, dest);
+        return;
+    }
+
+    next_hop = my_node->succ[dest];
+    if (next_hop == INVALID_NUMBER || fd_edges[next_hop] == INVALID_NUMBER) {
+        printf("Aviso: Next hop inválido para reencaminhar CHAT de %d para %d.\n", origin, dest);
+        return;
+    }
+
+    if (next_hop == neighbor_id) {
+        printf("Aviso: Rota para %d aponta de volta para o nó %d. CHAT descartado para evitar loop.\n", dest, neighbor_id);
+        return;
+    }
+
+    snprintf(chat_msg, sizeof(chat_msg), "CHAT %d %d %s\n", origin, dest, message);
+    send_tcp_to_neighbor(next_hop, chat_msg);
+
+    if (routing_monitor_active) {
+        printf("CHAT de %d para %d reenviado para o nó %d.\n", origin, dest, next_hop);
     }
 }
 
@@ -203,48 +240,43 @@ void handle_link_drop(NodeState *my_node, int dropped_neighbor) {
 
 void process_ROUTE(NodeState *my_node, int neighbor_id, int dest, int n) {
     char route_msg[32];
+    int nova_dist;
 
-    // Se o vizinho me está a tentar ensinar como chegar a mim próprio, ignoro!
     if (dest == my_node->id) {
-        return; 
+        return;
     }
 
-    int nova_dist = n + 1;
+    nova_dist = n + 1;
 
-    // REGRA DE OURO DO ROUTING: 
-    // Atualizamos se for um atalho (nova_dist < dist atual) 
-    // OU se a mensagem veio do vizinho que já usamos para chegar lá (succ == neighbor_id)
     if (nova_dist < my_node->dist[dest] || my_node->succ[dest] == neighbor_id) {
-        
-        // Só propagamos se a distância tiver EFETIVAMENTE mudado!
+        // So propagamos se a distancia tiver efetivamente mudado!
         if (my_node->dist[dest] != nova_dist) {
             my_node->dist[dest] = nova_dist;
             my_node->succ[dest] = neighbor_id;
 
-        if (my_node->state[dest] == 0) {
-            snprintf(route_msg, sizeof(route_msg), "ROUTE %d %d\n", dest, my_node->dist[dest]);
-            send_tcp_to_all_neighbors(route_msg);
-
-
             if (my_node->state[dest] == 0) {
                 snprintf(route_msg, sizeof(route_msg), "ROUTE %d %d\n", dest, my_node->dist[dest]);
-                
-                // Enviar para todos os vizinhos EXCETO quem nos enviou a rota (Split Horizon)
-                for (int i = 0; i < 100; i++) {
-                    if (fd_edges[i] != -1 && i != neighbor_id) {
-                        write(fd_edges[i], route_msg, strlen(route_msg));
+                send_tcp_to_all_neighbors(route_msg);
+
+                if (my_node->state[dest] == 0) {
+                    snprintf(route_msg, sizeof(route_msg), "ROUTE %d %d\n", dest, my_node->dist[dest]);
+
+                    // Enviar para todos os vizinhos EXCETO quem nos enviou a rota (Split Horizon)
+                    for (int i = 0; i < 100; i++) {
+                        if (fd_edges[i] != -1 && i != neighbor_id) {
+                            write(fd_edges[i], route_msg, strlen(route_msg));
+                        }
                     }
-                }
-                
-                if (routing_monitor_active) {
-                printf("ROUTE melhorou para o destino %d via nó %d com distância %d.\n",
-                       dest, neighbor_id, my_node->dist[dest]);
+
+                    if (routing_monitor_active) {
+                        printf("ROUTE melhorou para o destino %d via no %d com distancia %d.\n",
+                               dest, neighbor_id, my_node->dist[dest]);
+                    }
                 }
             }
         }
     }
 }
-
 
 void process_COORD(NodeState *my_node, int neighbor_id, int dest) {
     char route_msg[32];

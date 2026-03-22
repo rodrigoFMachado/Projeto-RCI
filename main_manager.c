@@ -306,7 +306,7 @@ bool word_processor(NodeState *my_node, ParsedCommand *current_command) {
             // Verificar message 
             else if (strcmp(command_first_w, "m") == 0) {
 
-                if (sscanf(buffer_teclado, "%*s %d %s", &current_command->id, current_command->message) != 2) {
+                if (sscanf(buffer_teclado, "%*s %d %128[^\n]", &current_command->id, current_command->message) != 2) {
                     printf("Erro: Argumentos inválidos. Uso: message dest message\n");
                     return true; 
                 }
