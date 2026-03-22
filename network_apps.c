@@ -20,7 +20,7 @@ void process_COORD(NodeState *my_node, int neighbor_id, int dest);
 
 void process_UNCOORD(NodeState *my_node, int neighbor_id, int dest);
 
-static void send_tcp_to_neighbor(int neighbor_id, const char *message) {
+void send_tcp_to_neighbor(int neighbor_id, const char *message) {
     if (neighbor_id < 0 || neighbor_id >= 100) {
         return;
     }
@@ -33,7 +33,7 @@ static void send_tcp_to_neighbor(int neighbor_id, const char *message) {
 }
 
 
-static void send_tcp_to_all_neighbors(const char *message) {
+void send_tcp_to_all_neighbors(const char *message) {
     for (int i = 0; i < 100; i++) {
         if (fd_edges[i] != -1) {
             write(fd_edges[i], message, strlen(message));
@@ -42,7 +42,7 @@ static void send_tcp_to_all_neighbors(const char *message) {
 }
 
 
-static bool coord_finished_for_dest(NodeState *my_node, int dest) {
+bool coord_finished_for_dest(NodeState *my_node, int dest) {
     for (int i = 0; i < 100; i++) {
         if (fd_edges[i] != -1 && my_node->coord[dest][i] != 0) {
             return false;
@@ -124,27 +124,35 @@ void handle_link_drop(NodeState *my_node, int dropped_neighbor) {
     char coord_msg[32];
     
     for (int dest = 0; dest < 100; dest++) {
-        if (dest == my_node->id) continue; // Ignora o próprio nó
+        if (dest == my_node->id) continue;
 
         // CASO 1: Estávamos em expedição e perdemos o nosso sucessor para este destino
         if (my_node->state[dest] == 0 && my_node->succ[dest] == dropped_neighbor) {
-            
-            my_node->state[dest] = 1;         // Entra em coordenação
-            my_node->succ_coord[dest] = -1;   // -1 porque a transição foi falha de ligação
-            my_node->dist[dest] = INFINITO;        // Distância passa a infinito
+            bool waiting_for_someone = false; 
+
+            my_node->state[dest] = 1;         
+            my_node->succ_coord[dest] = -1;   
+            my_node->dist[dest] = INFINITO;        
             my_node->succ[dest] = -1;
 
             printf("Ligação caiu! Entramos em COORD para o destino %d.\n", dest);
 
-            // Avisar todos os vizinhos (ativos) que a rota caiu e marcá-los na matriz
             snprintf(coord_msg, sizeof(coord_msg), "COORD %d\n", dest);
+            
             for (int i = 0; i < 100; i++) {
                 if (fd_edges[i] != -1) {
-                    my_node->coord[dest][i] = 1; // Fico à espera da resposta deles
+                    my_node->coord[dest][i] = 1; 
                     send_tcp_to_neighbor(i, coord_msg);
+                    waiting_for_someone = true; // Temos vizinhos reais para esperar!
                 } else {
                     my_node->coord[dest][i] = 0;
                 }
+            }
+
+            // O FIX: Se não temos mais nenhum vizinho, terminamos a coordenação IMEDIATAMENTE!
+            if (!waiting_for_someone) {
+                my_node->state[dest] = 0;
+                printf("Saída imediata da coordenação para o destino %d (sem vizinhos ativos).\n", dest);
             }
         }
         // CASO 2: Já estávamos em coordenação e o vizinho morreu
@@ -181,18 +189,39 @@ void handle_link_drop(NodeState *my_node, int dropped_neighbor) {
     }
 }
 
+
 void process_ROUTE(NodeState *my_node, int neighbor_id, int dest, int n) {
     char route_msg[32];
 
-    if (n + 1 < my_node->dist[dest]) {
-        my_node->dist[dest] = n + 1;
-        my_node->succ[dest] = neighbor_id;
+    // Se o vizinho me está a tentar ensinar como chegar a mim próprio, ignoro!
+    if (dest == my_node->id) {
+        return; 
+    }
 
-        if (my_node->state[dest] == 0) {
-            snprintf(route_msg, sizeof(route_msg), "ROUTE %d %d\n", dest, my_node->dist[dest]);
-            send_tcp_to_all_neighbors(route_msg);
-            printf("ROUTE melhorou para o destino %d via nó %d com distância %d.\n",
-                   dest, neighbor_id, my_node->dist[dest]);
+    int nova_dist = n + 1;
+
+    // REGRA DE OURO DO ROUTING: 
+    // Atualizamos se for um atalho (nova_dist < dist atual) 
+    // OU se a mensagem veio do vizinho que já usamos para chegar lá (succ == neighbor_id)
+    if (nova_dist < my_node->dist[dest] || my_node->succ[dest] == neighbor_id) {
+        
+        // Só propagamos se a distância tiver EFETIVAMENTE mudado!
+        if (my_node->dist[dest] != nova_dist) {
+            my_node->dist[dest] = nova_dist;
+            my_node->succ[dest] = neighbor_id;
+
+            if (my_node->state[dest] == 0) {
+                snprintf(route_msg, sizeof(route_msg), "ROUTE %d %d\n", dest, my_node->dist[dest]);
+                
+                // Enviar para todos os vizinhos EXCETO quem nos enviou a rota (Split Horizon)
+                for (int i = 0; i < 100; i++) {
+                    if (fd_edges[i] != -1 && i != neighbor_id) {
+                        write(fd_edges[i], route_msg, strlen(route_msg));
+                    }
+                }
+                
+                printf("ROUTE melhorou para o destino %d via nó %d com distância %d.\n", dest, neighbor_id, my_node->dist[dest]);
+            }
         }
     }
 }
@@ -268,31 +297,26 @@ void process_UNCOORD(NodeState *my_node, int neighbor_id, int dest) {
 
 
 void NodeState_inicialization(NodeState *my_node, bool joined_state, int net, int id) {
+    // 1. Limpar a casa primeiro para TODOS os 100 destinos
+    for (int i = 0; i < 100; i++) {
+        my_node->dist[i] = INFINITO; 
+        my_node->succ[i] = INVALID_NUMBER;
+        my_node->state[i] = 0;
+        my_node->succ_coord[i] = INVALID_NUMBER;
+        for (int j = 0; j < 100; j++) {
+            my_node->coord[i][j] = INVALID_NUMBER;
+        }
+    }
 
+    // 2. Configurar o nó
     if (!joined_state){
         my_node->is_registered = false;
         my_node->net = INVALID_NUMBER;
         my_node->id = INVALID_NUMBER;        
-
     } else {
         my_node->is_registered = true;
         my_node->net = net;
         my_node->id = id;
-        my_node->dist[id] = 0;
-        my_node->succ[id] = id;
-        return;
+        // Já NÃO metemos dist = 0 aqui! Ele fica a INFINITO até haver o comando "announce".
     }
-
-    for (int i = 0; i < 100; i++) {
-        my_node->dist[i] = INFINITO; // Distância inicial é infinito
-        my_node->succ[i] = INVALID_NUMBER;
-        my_node->state[i] = 0;
-        my_node->succ_coord[i] = INVALID_NUMBER;
-
-        for (int j = 0; j < 100; j++) {
-            my_node->coord[i][j] = INVALID_NUMBER; // INVALID_NUMBER para indicar "sem coordenador" ou "nenhum"
-        }
-    }
-
-    return;
 }

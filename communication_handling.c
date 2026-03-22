@@ -289,16 +289,15 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
 
 
     } else if (strcmp(current_command->command, "a") == 0) {
+        
+        my_node->dist[my_node->id] = 0;
+        my_node->succ[my_node->id] = my_node->id;
+
         char announce_msg[32];
         sprintf(announce_msg, "ROUTE %d %d\n", my_node->id, 0);
 
-        for (int i = 0; i < 100; i++) {
-            if (fd_edges[i] != -1) {
-                write(fd_edges[i], announce_msg, strlen(announce_msg));
-            }
-        }
-
-
+        send_tcp_to_all_neighbors(announce_msg); // Podes usar a tua função auxiliar aqui!
+        printf("Nó %d anunciado na rede.\n", my_node->id);
     } else if (strcmp(current_command->command, "sr") == 0) {
         int dest = current_command->id;
 
@@ -355,7 +354,25 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
 }
 
 
+void sync_new_neighbor(NodeState *my_node, int new_neighbor_id) {
+    char route_msg[32];
 
+    for (int dest = 0; dest < 100; dest++) {
+        
+        // 1. O nó está em expedição para este destino e tem rota válida
+        if (my_node->state[dest] == 0) {
+            if (my_node->dist[dest] != INFINITO) { 
+                snprintf(route_msg, sizeof(route_msg), "ROUTE %d %d\n", dest, my_node->dist[dest]);
+                write(fd_edges[new_neighbor_id], route_msg, strlen(route_msg));
+            }
+        } 
+        // 2. O nó está em coordenação para este destino
+        else if (my_node->state[dest] == 1) {
+            // O regresso à expedição não depende do novo vizinho
+            my_node->coord[dest][new_neighbor_id] = 0; 
+        }
+    }
+}
 
 
 void connect_to_node(NodeState *my_node, ParsedCommand *current_command) {
@@ -383,15 +400,18 @@ void connect_to_node(NodeState *my_node, ParsedCommand *current_command) {
         write(fd_out, msg_neighbor, strlen(msg_neighbor));
         
         printf("Aresta criada com sucesso com o nó %d\n", current_command->id);
+
+        sync_new_neighbor(my_node, current_command->id);
     }
 
     freeaddrinfo(res);
 }
 
 
-void accept_connection(void) {
+void accept_connection(NodeState *my_node) {
     struct sockaddr addr;
     socklen_t addrlen = sizeof(addr);
+    int vizinho_id;
 
     int new_fd = accept(fd_tcp_listen, (struct sockaddr*)&addr, &addrlen);
 
@@ -407,11 +427,13 @@ void accept_connection(void) {
     }
 
     buffer[bytes_read] = '\0';
-    int vizinho_id;
+    
         
     if (sscanf(buffer, "NEIGHBOR %d", &vizinho_id) == 1) {
         fd_edges[vizinho_id] = new_fd;
         printf("Nova conexão estabelecida com o nó %d\n", vizinho_id);
+
+        sync_new_neighbor(my_node, vizinho_id);
     } else {
         // Protocol Violation! (Mandou lixo)
         printf("Aviso: Violação de protocolo. A fechar ligação.\n");

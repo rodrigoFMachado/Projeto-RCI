@@ -123,7 +123,7 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         // ==========================================
         if (FD_ISSET(fd_tcp_listen, &rfds)) {
 
-            accept_connection();
+            accept_connection(my_node);
 
         }
 
