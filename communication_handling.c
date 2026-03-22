@@ -134,11 +134,6 @@ bool handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, cha
 
     else if (strcmp(current_command->command, "ae") == 0) { // add edge
 
-        if(!my_node->is_registered) {
-            printf("Erro: Não está registado. Não pode executar 'add'.\n");
-            return true;
-        }
-
         if(current_command->id == my_node->id) {
             printf("Erro: Não pode criar uma aresta para si mesmo.\n");
             return true;
@@ -252,7 +247,7 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         }
 
 
-    } else if (strcmp(current_command->command, "ae") == 0) {
+    } else if (strcmp(current_command->command, "ae") == 0 || strcmp(current_command->command, "dae") == 0) {
         
         connect_to_node(my_node, current_command);
 

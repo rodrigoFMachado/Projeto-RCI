@@ -80,7 +80,6 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         // ==========================================
         if (FD_ISSET(STDIN_FILENO, &rfds)) { // teclado, envia msg UDP
 
-
             exit_failure = word_processor(my_node, current_command);
             
             if (exit_failure) { 
@@ -240,6 +239,10 @@ bool word_processor(NodeState *my_node, ParsedCommand *current_command) {
                     printf("Erro: Argumentos inválidos. Uso: add edge id\n");
                     return true; 
                 }
+                if(!my_node->is_registered) {
+                    printf("Erro: Não é um nó.\n");
+                    return true;
+                }
                 strcpy(current_command->command, "ae");
             }
 
@@ -319,29 +322,27 @@ bool word_processor(NodeState *my_node, ParsedCommand *current_command) {
                 if (sscanf(buffer_teclado, "%*s %d %d", &current_command->net, &current_command->id) != 2) {
                     printf("Erro: Argumentos inválidos. Uso: direct join net id\n");
                     return true; 
-                } else {
-                    my_node->net = current_command->net;
-                    my_node->id = current_command->id;
+                } 
+                
+                strcpy(current_command->command, "dj");
 
-                    my_node->is_registered = true;
-                }              
-            }
+                NodeState_inicialization(my_node, true, current_command->net, current_command->id);
+            }                    
 
             // Verificar direct add edge
             else if (strcmp(command_first_w, "dae") == 0) {
+
+                if(!my_node->is_registered) { 
+                    printf("Erro: Não é um nó.\n");
+                    return true; 
+                }
 
                 if (sscanf(buffer_teclado, "%*s %d %s %s", &current_command->id, current_command->tempTCP_IP, current_command->tempTCP_Port) != 3) {
                     printf("Erro: Argumentos inválidos. Uso: direct add edge id idIP idTCP\n");
                     return true; 
                 }
-
-                if(my_node->is_registered) {
-                    connect_to_node(my_node, current_command);
-                } else {
-                    printf("Erro: Não é um nó. Não pode executar 'direct add edge'.\n");
-                    return true; 
-                }
-   
+                
+                strcpy(current_command->command, "dae"); 
             }
 
             else {
