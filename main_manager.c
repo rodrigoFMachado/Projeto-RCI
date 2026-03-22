@@ -142,11 +142,12 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
                     // Se bytes == -1, a ligação caiu de forma bruta.
                     printf("O nó %d desconectou-se (aresta removida).\n", i);
 
+                    int dropped_neighbor = fd_edges[i]; // Guardar o socket do vizinho
+                    fd_edges[i] = INVALID_NUMBER; // Limpamos a aresta do nosso lado
                     handle_link_drop(my_node, i); // Processar a queda da ligação no protocolo de encaminhamento
 
-                    close(fd_edges[i]);
-                    fd_edges[i] = INVALID_NUMBER; // Limpamos a aresta do nosso lado
-                    
+                    close(dropped_neighbor); // Fechar o socket da ligação caída;
+
                 } else {
                     // Recebemos texto do vizinho!
                     buffer[bytes] = '\0';

@@ -237,14 +237,14 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
 
     if (strcmp(current_command->command, "l") == 0) {
 
-        strcpy(current_command->command, "re");
-        // por fazer - faz o remove edge final(loop de todos os vizinhos ativos)
+        // O nó vai sair da rede. Não há roteamento a fazer, apenas fechar portas.
         for(int i = 0; i < 100; i++) {
             if(fd_edges[i] != INVALID_NUMBER) {
-                current_command->id = i;
-                handle_tcp_commands(my_node, current_command);
+                close(fd_edges[i]);
+                fd_edges[i] = INVALID_NUMBER;
             }
         }
+        printf("Arestas locais fechadas (Leave).\n");
 
 
     } else if (strcmp(current_command->command, "ae") == 0 || strcmp(current_command->command, "dae") == 0) {
