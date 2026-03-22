@@ -5,7 +5,7 @@
 #define BUFFER_TCP_SIZE 128
 
 
-int handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP); 
+bool handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP); 
 
 void send_and_receiveUDP(char *udp_message); // função auxiliar para enviar mensagem UDP e esperar pela resposta do servidor
 
@@ -15,7 +15,7 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command);
 
 void connect_to_node(NodeState *my_node, ParsedCommand *current_command);
 
-void accept_connection(void);
+void accept_connection(NodeState *my_node);
 
 void tcp_starter(char *myIP, char *myTCP);
 
