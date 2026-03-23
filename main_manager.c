@@ -328,6 +328,8 @@ bool word_processor(NodeState *my_node, ParsedCommand *current_command) {
                 strcpy(current_command->command, "dj");
 
                 NodeState_inicialization(my_node, true, current_command->net, current_command->id);
+
+                printf("Nó criado localmente com net %d e id %d.\n", my_node->net, my_node->id);
             }                    
 
             // Verificar direct add edge
