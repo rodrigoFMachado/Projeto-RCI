@@ -2,8 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#include "connections.h"
-#include "helper.h"
+#include "main_manager.h"
 
 
 int main(int argc, char *argv[]) 
@@ -16,7 +15,7 @@ int main(int argc, char *argv[])
 
     interface(argc, argv, &myIP, &myTCP, &regIP, &regUDP);
 
-    mother_of_all_manager(myIP, myTCP, regIP, regUDP);
+    manager_of_all(myIP, myTCP, regIP, regUDP);
     
     
     return 0;
