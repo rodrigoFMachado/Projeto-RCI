@@ -253,6 +253,7 @@ void process_ROUTE(NodeState *my_node, int neighbor_id, int dest, int n) {
         if (my_node->dist[dest] != nova_dist) {
             my_node->dist[dest] = nova_dist;
             my_node->succ[dest] = neighbor_id;
+        }
 
             if (my_node->state[dest] == 0) {
                 snprintf(route_msg, sizeof(route_msg), "ROUTE %d %d\n", dest, my_node->dist[dest]);
