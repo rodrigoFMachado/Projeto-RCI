@@ -239,8 +239,10 @@ void handle_link_drop(NodeState *my_node, int dropped_neighbor) {
 
 
 void process_ROUTE(NodeState *my_node, int neighbor_id, int dest, int n) {
+    char coord_msg[32];
     char route_msg[32];
     int nova_dist;
+    bool waiting_for_someone = false;
 
     if (dest == my_node->id) {
         return;
@@ -248,33 +250,55 @@ void process_ROUTE(NodeState *my_node, int neighbor_id, int dest, int n) {
 
     nova_dist = n + 1;
 
-    if (nova_dist < my_node->dist[dest] || my_node->succ[dest] == neighbor_id) {
-        // So propagamos se a distancia tiver efetivamente mudado!
-        if (my_node->dist[dest] != nova_dist) {
-            my_node->dist[dest] = nova_dist;
-            my_node->succ[dest] = neighbor_id;
-        
+    if (my_node->state[dest] != 0) {
+        return;
+    }
 
-            if (my_node->state[dest] == 0) {
-                snprintf(route_msg, sizeof(route_msg), "ROUTE %d %d\n", dest, my_node->dist[dest]);
-                send_tcp_to_all_neighbors(route_msg);
+    if (nova_dist < my_node->dist[dest]) {
+        my_node->dist[dest] = nova_dist;
+        my_node->succ[dest] = neighbor_id;
 
-                if (my_node->state[dest] == 0) {
-                    snprintf(route_msg, sizeof(route_msg), "ROUTE %d %d\n", dest, my_node->dist[dest]);
+        snprintf(route_msg, sizeof(route_msg), "ROUTE %d %d\n", dest, my_node->dist[dest]);
 
-                    // Enviar para todos os vizinhos EXCETO quem nos enviou a rota (Split Horizon)
-                    for (int i = 0; i < 100; i++) {
-                        if (fd_edges[i] != -1 && i != neighbor_id) {
-                            write(fd_edges[i], route_msg, strlen(route_msg));
-                        }
-                    }
-
-                    if (routing_monitor_active) {
-                        printf("ROUTE melhorou para o destino %d via no %d com distancia %d.\n",
-                               dest, neighbor_id, my_node->dist[dest]);
-                    }
-                }
+        // Split horizon: a rota nao e reenviada ao vizinho que a originou.
+        for (int i = 0; i < 100; i++) {
+            if (fd_edges[i] != -1 && i != neighbor_id) {
+                write(fd_edges[i], route_msg, strlen(route_msg));
             }
+        }
+
+        if (routing_monitor_active) {
+            printf("ROUTE melhorou para o destino %d via no %d com distancia %d.\n",
+                   dest, neighbor_id, my_node->dist[dest]);
+        }
+        return;
+    }
+
+    if (my_node->succ[dest] == neighbor_id && nova_dist > my_node->dist[dest]) {
+        my_node->state[dest] = 1;
+        my_node->succ_coord[dest] = neighbor_id;
+        my_node->dist[dest] = INFINITO;
+        my_node->succ[dest] = INVALID_NUMBER;
+
+        snprintf(coord_msg, sizeof(coord_msg), "COORD %d\n", dest);
+        for (int i = 0; i < 100; i++) {
+            if (fd_edges[i] != -1) {
+                my_node->coord[dest][i] = 1;
+                send_tcp_to_neighbor(i, coord_msg);
+                waiting_for_someone = true;
+            } else {
+                my_node->coord[dest][i] = 0;
+            }
+        }
+
+        if (!waiting_for_someone) {
+            my_node->state[dest] = 0;
+            my_node->succ_coord[dest] = INVALID_NUMBER;
+        }
+
+        if (routing_monitor_active) {
+            printf("ROUTE piorou via no %d para o destino %d. A entrar em coordenacao.\n",
+                   neighbor_id, dest);
         }
     }
 }
