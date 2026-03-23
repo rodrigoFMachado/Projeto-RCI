@@ -294,6 +294,9 @@ bool word_processor(NodeState *my_node, ParsedCommand *current_command) {
                     printf("Erro: Argumentos inválidos. Uso: start monitor\n");
                     return true; 
                 }
+                routing_monitor_active = true;
+                printf("Monitorização de encaminhamento ativada.\n");
+
                 strcpy(current_command->command, "sm");
             }
 
@@ -304,6 +307,9 @@ bool word_processor(NodeState *my_node, ParsedCommand *current_command) {
                     printf("Erro: Argumentos inválidos. Uso: end monitor\n");
                     return true; 
                 }
+                routing_monitor_active = false;
+                printf("Monitorização de encaminhamento desativada.\n");
+
                 strcpy(current_command->command, "em");
             }
 

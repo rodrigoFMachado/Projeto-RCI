@@ -295,16 +295,6 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         printf("Nó %d anunciado na rede.\n", my_node->id);
 
 
-    } else if (strcmp(current_command->command, "sm") == 0) {
-        routing_monitor_active = true;
-        printf("Monitorização de encaminhamento ativada.\n");
-
-
-    } else if (strcmp(current_command->command, "em") == 0) {
-        routing_monitor_active = false;
-        printf("Monitorização de encaminhamento desativada.\n");
-
-        
     } else if (strcmp(current_command->command, "m") == 0) {
         int dest = current_command->id;
         int next_hop;
