@@ -122,7 +122,7 @@ bool handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, cha
             if(received_tid == tid) {
 
                 if(received_op == OP_NODES_RES) { // Expected: 1
-                    printf("Nós na rede %d:\n %s\n", current_command->net, udp_message + 16); // Imprime a lista de nós (tudo depois dos 16 primeiros caracteres "NODES TID OP NET ")
+                    printf("Nós na rede %d:\n%s\n", current_command->net, udp_message + 16); // Imprime tudo depois dos 16 primeiros caracteres "NODES TID OP NET "
                 } else {
                     printf("Erro: Resposta inesperada do servidor.\n");
                     return true;
@@ -258,7 +258,7 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         bool exists = false;
         printf("Vizinhos ativos:\n");
         for (int i = 0; i < 100; i++) {
-            if (fd_edges[i] != -1) {
+            if (fd_edges[i] != INVALID_NUMBER) {
                 exists = true;
                 printf("%d\n", i);
             }
@@ -270,7 +270,7 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
 
     } else if (strcmp(current_command->command, "re") == 0) {
         
-        if (fd_edges[current_command->id] != -1) {
+        if (fd_edges[current_command->id] != INVALID_NUMBER) {
 
             close(fd_edges[current_command->id]);
             fd_edges[current_command->id] = INVALID_NUMBER; // Liberta o slot!
@@ -291,7 +291,11 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         char announce_msg[32];
         sprintf(announce_msg, "ROUTE %d %d\n", my_node->id, 0);
 
-        send_tcp_to_all_neighbors(announce_msg); // Podes usar a tua função auxiliar aqui!
+        for (int i = 0; i < 100; i++) {
+            if (fd_edges[i] != INVALID_NUMBER) {
+                write(fd_edges[i], announce_msg, strlen(announce_msg));
+            }
+        }
         printf("Nó %d anunciado na rede.\n", my_node->id);
 
 
@@ -337,7 +341,7 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         }
 
         snprintf(chat_msg, sizeof(chat_msg), "CHAT %d %d %s\n", my_node->id, dest, current_command->message);
-        send_tcp_to_neighbor(next_hop, chat_msg);
+        write(fd_edges[next_hop], chat_msg, strlen(chat_msg));
         printf("Mensagem enviada para o nó %d via nó %d.\n", dest, next_hop);
 
     } else if (strcmp(current_command->command, "sr") == 0) {
