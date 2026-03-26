@@ -458,23 +458,37 @@ void accept_connection(NodeState *my_node) {
     struct sockaddr addr;
     socklen_t addrlen = sizeof(addr);
     int vizinho_id;
+    char buffer[BUFFER_TCP_SIZE]; 
 
     int new_fd = accept(fd_tcp_listen, (struct sockaddr*)&addr, &addrlen);
+    if (new_fd == -1) return;
 
-    char buffer[BUFFER_TCP_SIZE];
-    // Lemos os dados instantaneamente
-    int bytes_read = read(new_fd, buffer, sizeof(buffer) - 1);
+    int total_bytes = 0;
+    int bytes_read;
 
-    // Se houver erro de leitura OU se a outra pessoa fechar a ligação imediatamente (bytes == 0)
-    if (bytes_read <= 0) {
-        printf("Erro ou ligação terminada antes de enviar ID.\n");
-        close(new_fd);
-        return; // IMPORTANTE: Sair da função logo aqui!
+    // ler tcp até /n
+    while (total_bytes < BUFFER_TCP_SIZE - 1) {
+        
+        // Ler 1 byte de cada vez para o buffer
+        bytes_read = read(new_fd, buffer + total_bytes, 1); 
+        
+        // Se der erro ou a pessoa desligar o cabo a meio da palavra
+        if (bytes_read <= 0) {
+            printf("Erro ou ligação terminada antes de enviar ID completo.\n");
+            close(new_fd);
+            return; 
+        }
+
+        total_bytes += bytes_read;
+        
+        if (buffer[total_bytes - 1] == '\n') {
+            break; // Saímos do ciclo de leitura
+        }
     }
 
-    buffer[bytes_read] = '\0';
+    buffer[total_bytes] = '\0'; // Fechamos a string em C
     
-        
+    // Processar mensagem que ja chegou de certeza ao LF
     if (sscanf(buffer, "NEIGHBOR %d", &vizinho_id) == 1) {
         fd_edges[vizinho_id] = new_fd;
         printf("Nova conexão estabelecida com o nó %d\n", vizinho_id);
