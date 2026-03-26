@@ -210,6 +210,9 @@ void process_UNCOORD(NodeState *my_node, int neighbor_id, int dest) {
                 for (int i = 0; i < 100; i++) {
                     if (fd_edges[i] != INVALID_NUMBER) {
                         write(fd_edges[i], msg_to_send, strlen(msg_to_send));
+                        if (routing_monitor_active) {
+                            printf("[SENT] %s", msg_to_send);
+                        }
                     }
                 }
             }
@@ -218,6 +221,9 @@ void process_UNCOORD(NodeState *my_node, int neighbor_id, int dest) {
             if (my_node->succ_coord[dest] != INVALID_NUMBER) {
                 snprintf(msg_to_send, sizeof(msg_to_send), "UNCOORD %d\n", dest);
                 write(fd_edges[my_node->succ_coord[dest]], msg_to_send, strlen(msg_to_send));
+                if (routing_monitor_active) {
+                    printf("[SENT] %s", msg_to_send);
+                }
 
                 my_node->succ_coord[dest] = INVALID_NUMBER;
             }
@@ -255,7 +261,7 @@ void process_CHAT(NodeState *my_node, int neighbor_id, int origin, int dest, con
     write(fd_edges[next_hop], chat_msg, strlen(chat_msg));
 
     if (routing_monitor_active) {
-        printf("CHAT de %d para %d reenviado para o nó %d.\n", origin, dest, next_hop);
+        printf("[SENT] %s", chat_msg);
     }
 }
 

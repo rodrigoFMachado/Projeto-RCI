@@ -180,24 +180,29 @@ void send_and_receiveUDP(char *udp_message) {
     struct sockaddr addr;
     socklen_t addrlen;
 
-    // printf("Enviando mensagem UDP: %s\n", udp_message); // Debug: mostra a mensagem que será enviada
-    n=sendto(fd_udp, udp_message, strlen(udp_message), 0, address_udp->ai_addr, address_udp->ai_addrlen);
-    if(n == -1) {
-        printf("Erro ao enviar UDP.\n");
-        return;
-    }
+    for(int i = 0; i < 2; i++) {
+        n=sendto(fd_udp, udp_message, strlen(udp_message), 0, address_udp->ai_addr, address_udp->ai_addrlen);
+        if(n == -1) {
+            printf("Erro ao enviar UDP.\n");
+            return;
+        }
 
-
-    // Espera de resposta
-    addrlen = sizeof(addr);
-    n = recvfrom(fd_udp, udp_message, 128, 0, (struct sockaddr*)&addr, &addrlen);
-    if(n == -1) {
-        // O timeout disparou! O pacote perdeu-se ou o servidor está em baixo.
+        // Espera de resposta
+        addrlen = sizeof(addr);
+        n = recvfrom(fd_udp, udp_message, 128, 0, (struct sockaddr*)&addr, &addrlen);
+        if(n != -1) {
+            udp_message[n] = '\0';
+            break; // Recebeu resposta, sai do ciclo
+        }
+        
         printf("Erro: O servidor não respondeu (Timeout)\n");
-        udp_message[0] = '\0'; // Limpa a string para o sscanf falhar em segurança
-        return;
+        printf("A retransmitir.\n");
+        udp_message[0] = '\0'; // termina a string para nao ler lixo na ultima iteracao
     }
-    udp_message[n] = '\0';
+    
+
+    // printf("Enviando mensagem UDP: %s\n", udp_message); // Debug: mostra a mensagem que será enviada
+
     
     // printf("echo: %s\n", udp_message); // Debug: mostra a resposta recebida do servidor
 }
