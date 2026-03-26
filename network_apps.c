@@ -51,28 +51,28 @@ void process_tcp_message(NodeState *my_node, ParsedCommand *current_command, int
 
         if (sscanf(line, "ROUTE %d %d", &dest, &distance) == 2) {
             if (routing_monitor_active) {
-                printf("Recebido do nó %d: %s\n", neighbor_id, line);
+                printf("[RECEIVED] %s\n", line);
             }
             process_ROUTE(my_node, neighbor_id, dest, distance);
     
 
         } else if (sscanf(line, "COORD %d", &dest) == 1) {
             if (routing_monitor_active) {
-                printf("Recebido do nó %d: %s\n", neighbor_id, line);
+                printf("[RECEIVED] %s\n", line);
             }
             process_COORD(my_node, neighbor_id, dest);
        
 
         } else if (sscanf(line, "UNCOORD %d", &dest) == 1) {
             if (routing_monitor_active) {
-                printf("Recebido do nó %d: %s\n", neighbor_id, line);
+                printf("[RECEIVED] %s\n", line);
             }
             process_UNCOORD(my_node, neighbor_id, dest);
 
         // O guião diz que a mensagem de CHAT tem no máximo 128 caracteres (le frases com espacos)
         } else if (sscanf(line, "CHAT %d %d %128[^\n]", &origin, &dest, current_command->message) == 3) {
             if (routing_monitor_active) {
-                printf("Recebido do nó %d: %s\n", neighbor_id, line);
+                printf("[RECEIVED] %s\n", line);
             }
             process_CHAT(my_node, neighbor_id, origin, dest, current_command->message);
 
@@ -105,16 +105,17 @@ void process_ROUTE(NodeState *my_node, int neighbor_id, int dest, int distance) 
         my_node->dist[dest] = distance + 1;
         my_node->succ[dest] = neighbor_id;
 
-        if (routing_monitor_active) {
-            printf("ROUTE melhorou para o destino %d via nó %d com distância %d.\n", dest, neighbor_id, my_node->dist[dest]);
-        }
+        printf("ROUTE melhorou para o destino %d via nó %d com distância %d.\n", dest, neighbor_id, my_node->dist[dest]);
 
         // SÓ PROPAGA SE ESTIVER EM EXPEDIÇÃO NORMAL!
         if (my_node->state[dest] == 0) {
             snprintf(msg_to_send, sizeof(msg_to_send), "ROUTE %d %d\n", dest, my_node->dist[dest]);
             for (int i = 0; i < 100; i++) {
                 if (fd_edges[i] != INVALID_NUMBER) {
-                write(fd_edges[i], msg_to_send, strlen(msg_to_send));
+                    write(fd_edges[i], msg_to_send, strlen(msg_to_send));
+                    if (routing_monitor_active) {
+                        printf("[SENT] %s", msg_to_send);
+                    }
                 }
             }
         }
@@ -131,6 +132,9 @@ void process_COORD(NodeState *my_node, int neighbor_id, int dest) {
     if (my_node->state[dest] == 1) {
         snprintf(msg_to_send, sizeof(msg_to_send), "UNCOORD %d\n", dest);
         write(fd_edges[neighbor_id], msg_to_send, strlen(msg_to_send));
+        if(routing_monitor_active) {
+            printf("[SENT] %s", msg_to_send);
+        }
         return;
     }
 
@@ -140,10 +144,16 @@ void process_COORD(NodeState *my_node, int neighbor_id, int dest) {
         if (my_node->dist[dest] != INFINITO) {
             snprintf(msg_to_send, sizeof(msg_to_send), "ROUTE %d %d\n", dest, my_node->dist[dest]);
             write(fd_edges[neighbor_id], msg_to_send, strlen(msg_to_send));
+            if(routing_monitor_active) {
+                printf("[SENT] %s", msg_to_send);
+            }
         }
 
         snprintf(msg_to_send, sizeof(msg_to_send), "UNCOORD %d\n", dest);
         write(fd_edges[neighbor_id], msg_to_send, strlen(msg_to_send));
+        if(routing_monitor_active) {
+            printf("[SENT] %s", msg_to_send);
+        }
         return;
     }
 
@@ -160,15 +170,18 @@ void process_COORD(NodeState *my_node, int neighbor_id, int dest) {
             if (fd_edges[i] != INVALID_NUMBER) {
                 my_node->coord[dest][i] = 1; // Registamos que estamos à espera deste vizinho
                 write(fd_edges[i], msg_to_send, strlen(msg_to_send));
+                if (routing_monitor_active) {
+                    printf("[SENT] %s", msg_to_send);
+                }
             } else {
                 my_node->coord[dest][i] = 0; // Slots vazios não contam
             }
         }
 
-        if (routing_monitor_active) {
-            printf("Recebido COORD do vizinho de expedição %d. A entrar em coordenação para o destino %d.\n", neighbor_id, dest);
-        }
+
+        printf("Recebido COORD do vizinho de expedição %d. A entrar em coordenação para o destino %d.\n", neighbor_id, dest);
     }
+    return;
 }
 
 
