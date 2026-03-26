@@ -122,7 +122,7 @@ bool handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, cha
             if(received_tid == tid) {
 
                 if(received_op == OP_NODES_RES) { // Expected: 1
-                    printf("Nós na rede %d:\n %s\n", current_command->net, udp_message + 16); // Imprime a lista de nós (tudo depois dos 16 primeiros caracteres "NODES TID OP NET ")
+                    printf("Nós na rede %d:\n%s\n", current_command->net, udp_message + 16); // Imprime tudo depois dos 16 primeiros caracteres "NODES TID OP NET "
                 } else {
                     printf("Erro: Resposta inesperada do servidor.\n");
                     return true;
@@ -180,24 +180,29 @@ void send_and_receiveUDP(char *udp_message) {
     struct sockaddr addr;
     socklen_t addrlen;
 
-    // printf("Enviando mensagem UDP: %s\n", udp_message); // Debug: mostra a mensagem que será enviada
-    n=sendto(fd_udp, udp_message, strlen(udp_message), 0, address_udp->ai_addr, address_udp->ai_addrlen);
-    if(n == -1) {
-        printf("Erro ao enviar UDP.\n");
-        return;
-    }
+    for(int i = 0; i < 2; i++) {
+        n=sendto(fd_udp, udp_message, strlen(udp_message), 0, address_udp->ai_addr, address_udp->ai_addrlen);
+        if(n == -1) {
+            printf("Erro ao enviar UDP.\n");
+            return;
+        }
 
-
-    // Espera de resposta
-    addrlen = sizeof(addr);
-    n = recvfrom(fd_udp, udp_message, 128, 0, (struct sockaddr*)&addr, &addrlen);
-    if(n == -1) {
-        // O timeout disparou! O pacote perdeu-se ou o servidor está em baixo.
+        // Espera de resposta
+        addrlen = sizeof(addr);
+        n = recvfrom(fd_udp, udp_message, 128, 0, (struct sockaddr*)&addr, &addrlen);
+        if(n != -1) {
+            udp_message[n] = '\0';
+            break; // Recebeu resposta, sai do ciclo
+        }
+        
         printf("Erro: O servidor não respondeu (Timeout)\n");
-        udp_message[0] = '\0'; // Limpa a string para o sscanf falhar em segurança
-        return;
+        printf("A retransmitir.\n");
+        udp_message[0] = '\0'; // termina a string para nao ler lixo na ultima iteracao
     }
-    udp_message[n] = '\0';
+    
+
+    // printf("Enviando mensagem UDP: %s\n", udp_message); // Debug: mostra a mensagem que será enviada
+
     
     // printf("echo: %s\n", udp_message); // Debug: mostra a resposta recebida do servidor
 }
@@ -258,7 +263,7 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         bool exists = false;
         printf("Vizinhos ativos:\n");
         for (int i = 0; i < 100; i++) {
-            if (fd_edges[i] != -1) {
+            if (fd_edges[i] != INVALID_NUMBER) {
                 exists = true;
                 printf("%d\n", i);
             }
@@ -270,7 +275,7 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
 
     } else if (strcmp(current_command->command, "re") == 0) {
         
-        if (fd_edges[current_command->id] != -1) {
+        if (fd_edges[current_command->id] != INVALID_NUMBER) {
 
             close(fd_edges[current_command->id]);
             fd_edges[current_command->id] = INVALID_NUMBER; // Liberta o slot!
@@ -291,7 +296,11 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         char announce_msg[32];
         sprintf(announce_msg, "ROUTE %d %d\n", my_node->id, 0);
 
-        send_tcp_to_all_neighbors(announce_msg); // Podes usar a tua função auxiliar aqui!
+        for (int i = 0; i < 100; i++) {
+            if (fd_edges[i] != INVALID_NUMBER) {
+                write(fd_edges[i], announce_msg, strlen(announce_msg));
+            }
+        }
         printf("Nó %d anunciado na rede.\n", my_node->id);
 
 
@@ -327,7 +336,7 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         }
 
         snprintf(chat_msg, sizeof(chat_msg), "CHAT %d %d %s\n", my_node->id, dest, current_command->message);
-        send_tcp_to_neighbor(next_hop, chat_msg);
+        write(fd_edges[next_hop], chat_msg, strlen(chat_msg));
         printf("Mensagem enviada para o nó %d via nó %d.\n", dest, next_hop);
 
     } else if (strcmp(current_command->command, "sr") == 0) {
@@ -444,23 +453,37 @@ void accept_connection(NodeState *my_node) {
     struct sockaddr addr;
     socklen_t addrlen = sizeof(addr);
     int vizinho_id;
+    char buffer[BUFFER_TCP_SIZE]; 
 
     int new_fd = accept(fd_tcp_listen, (struct sockaddr*)&addr, &addrlen);
+    if (new_fd == -1) return;
 
-    char buffer[BUFFER_TCP_SIZE];
-    // Lemos os dados instantaneamente
-    int bytes_read = read(new_fd, buffer, sizeof(buffer) - 1);
+    int total_bytes = 0;
+    int bytes_read;
 
-    // Se houver erro de leitura OU se a outra pessoa fechar a ligação imediatamente (bytes == 0)
-    if (bytes_read <= 0) {
-        printf("Erro ou ligação terminada antes de enviar ID.\n");
-        close(new_fd);
-        return; // IMPORTANTE: Sair da função logo aqui!
+    // ler tcp até /n
+    while (total_bytes < BUFFER_TCP_SIZE - 1) {
+        
+        // Ler 1 byte de cada vez para o buffer
+        bytes_read = read(new_fd, buffer + total_bytes, 1); 
+        
+        // Se der erro ou a pessoa desligar o cabo a meio da palavra
+        if (bytes_read <= 0) {
+            printf("Erro ou ligação terminada antes de enviar ID completo.\n");
+            close(new_fd);
+            return; 
+        }
+
+        total_bytes += bytes_read;
+        
+        if (buffer[total_bytes - 1] == '\n') {
+            break; // Saímos do ciclo de leitura
+        }
     }
 
-    buffer[bytes_read] = '\0';
+    buffer[total_bytes] = '\0'; // Fechamos a string em C
     
-        
+    // Processar mensagem que ja chegou de certeza ao LF
     if (sscanf(buffer, "NEIGHBOR %d", &vizinho_id) == 1) {
         fd_edges[vizinho_id] = new_fd;
         printf("Nova conexão estabelecida com o nó %d\n", vizinho_id);

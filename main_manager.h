@@ -9,7 +9,8 @@ extern int fd_edges[100]; // fd de conexões TCP ativas, max 100 conexões
 extern struct addrinfo *address_udp; // Endereços globais para UDP e TCP
 extern bool routing_monitor_active; // Monitorização das mensagens de encaminhamento
 
-
+// Escolhidos 100 para tamnho dos arrays por simplicidade - não precisamos de algoritmos de
+// procura no array, apesar de saber que nunca serao conectados 99 vizinhos (em contexto de aula)
 typedef struct NodeState_{
     bool is_registered;
     int net; 
@@ -17,10 +18,10 @@ typedef struct NodeState_{
 
     int dist[100];       // Distância para cada destino (inicia tudo a infinito/999)
     int succ[100];       // Vizinho de expedição (inicia tudo a -1)
-    int state[100];      // Estado: 0 (expedição) ou 1 (coordenação)
+    bool state[100];      // Estado: 0 (expedição) ou 1 (coordenação)
     
     int succ_coord[100]; // Quem causou a minha coordenação
-    int coord[100][100]; // Matriz de coordenação: coord[destino][vizinho] = 1 se o vizinho é coordenador para o destino
+    bool coord[100][100]; // Matriz de coordenação: coord[destino][vizinho] = 1 se o vizinho é coordenador para o destino
 } NodeState;
 
 typedef struct ParsedCommand_{
