@@ -149,6 +149,12 @@ void process_COORD(NodeState *my_node, int neighbor_id, int dest) {
 
     // Se state[t] = 1, então envia (exped, t) a j
     if (my_node->state[dest] == 1) {
+        // Se a mensagem COORD vem do vizinho que nos tinha dado a rota "secreta", invalidar
+        if (neighbor_id == my_node->succ[dest]) {
+            my_node->dist[dest] = INFINITO;
+            my_node->succ[dest] = INVALID_NUMBER;
+        }
+
         snprintf(msg_to_send, sizeof(msg_to_send), "UNCOORD %d\n", dest);
         write(fd_edges[neighbor_id], msg_to_send, strlen(msg_to_send));
         if(routing_monitor_active) {
@@ -279,9 +285,6 @@ void process_CHAT(NodeState *my_node, int neighbor_id, int origin, int dest, con
     snprintf(chat_msg, sizeof(chat_msg), "CHAT %d %d %s\n", origin, dest, message);
     write(fd_edges[next_hop], chat_msg, strlen(chat_msg));
 
-    if (routing_monitor_active) {
-        printf("[SENT] %s", chat_msg);
-    }
 }
 
 void handle_link_drop(NodeState *my_node, int dropped_neighbor) {
@@ -346,6 +349,11 @@ void handle_link_drop(NodeState *my_node, int dropped_neighbor) {
             
             if (my_node->succ_coord[dest] == dropped_neighbor) {
                 my_node->succ_coord[dest] = INVALID_NUMBER; // esquecer sucessor que nos mandou coord
+            }
+
+            if (my_node->succ[dest] == dropped_neighbor) {
+                my_node->dist[dest] = INFINITO;
+                my_node->succ[dest] = INVALID_NUMBER;
             }
 
             // Verificar se coord acabou

@@ -348,6 +348,9 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         for (int i = 0; i < 100; i++) {
             if (fd_edges[i] != INVALID_NUMBER) {
                 write(fd_edges[i], announce_msg, strlen(announce_msg));
+                if (routing_monitor_active) {
+                    printf("[SENT] %s", announce_msg);
+                }
             }
         }
         printf("Nó %d anunciado na rede.\n", my_node->id);
@@ -362,8 +365,6 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         routing_monitor_active = false;// flag global desativada para monitorização de encaminhamento
         printf("Monitorização de encaminhamento desativada.\n");
 
-    //NOTA: deviamos fazer aqui o mesmo que foi feita na receção de uma mensagem?
-    //se a ligação for perdida a meio do envio da mensagem, isto não pode dar erro? enviar msg para nó que não tem Ligações ativas?
     // processamento do comando "m" (message) para enviar uma mensagem de chat para um destino específico usando o next-hop conhecido.
     } else if (strcmp(current_command->command, "m") == 0) {
         int dest = current_command->id;
@@ -481,6 +482,9 @@ void sync_new_neighbor(NodeState *my_node, int new_neighbor_id) {
             if (my_node->dist[dest] != INFINITO) { 
                 snprintf(route_msg, sizeof(route_msg), "ROUTE %d %d\n", dest, my_node->dist[dest]);
                 write(fd_edges[new_neighbor_id], route_msg, strlen(route_msg));
+                if (routing_monitor_active) {
+                    printf("[SENT] %s", route_msg);
+                }
             }
         } 
         // 2. O nó está em coordenação para este destino
