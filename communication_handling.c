@@ -43,12 +43,12 @@
  * @brief Processa um comando do cliente e envia pedidos UDP para o servidor central de registo.
  *
  * Suporta os comandos:
- *   - "j" (join): regista o nó na rede e pede lista de nós ao servidor.
- *   - "l" (leave): remove o registo do nó.
- *   - "n" (nodes): consulta lista de nós na rede.
- *   - "ae" (add edge): consulta endereço TCP de outro nó para ligar-se.
+ *   - "j" (join): regista o nó na rede especificada dentro do servidor.
+ *   - "l" (leave): remove o registo do nó do servidor.
+ *   - "n" (show nodes): mostra lista de nós na rede especificada.
+ *   - "ae" (add edge): cria uma ligação TCP com outro nó.
  *
- * Esta função constrói mensagens de pedido usando opcodes e TID, envia via UDP
+ * Esta função faz a gerencia de mensagens UDP conforme os commandos do usuário, envia via UDP
  * com `send_and_receiveUDP` e interpreta a resposta para atualizar `my_node`.
  *
  * @param my_node      estado local do nó com dados de registro e roteamento.
@@ -189,7 +189,7 @@ bool handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, cha
  * Comportamento:
  * - envia a mesma mensagem até 2 tentativas.
  * - faz timeout usando SO_RCVTIMEO configurado em `udp_starter`.
- * - recebe a resposta e atualiza o buffer `udp_message` com o payload recebido.
+ * - recebe a resposta e atualiza o buffer `udp_message` com a mensagem recebida.
  *
  * @param udp_message buffer com mensagem de pedido, que também recebe a resposta.
  */
@@ -199,11 +199,16 @@ void send_and_receiveUDP(char *udp_message) {
     struct sockaddr addr;
     socklen_t addrlen;
 
+    // tentamos enviar a mensagem até 2 vezes, esperando resposta do servidor. Se não recebermos resposta, damos erro e saímos da função
     for(int i = 0; i < 2; i++) {
+
         n=sendto(fd_udp, udp_message, strlen(udp_message), 0, address_udp->ai_addr, address_udp->ai_addrlen);
+
         if(n == -1) {
+
             printf("Erro ao enviar UDP.\n");
             return;
+
         }
 
         // Espera de resposta
@@ -216,14 +221,13 @@ void send_and_receiveUDP(char *udp_message) {
         
         printf("Erro: O servidor não respondeu (Timeout)\n");
         printf("A retransmitir.\n");
-        udp_message[0] = '\0'; // termina a string para nao ler lixo na ultima iteracao
+        udp_message[0] = '\0'; // termina a string para nao ler lixo na ultima iteração
     }
     
+    // DEBUGGING:
+    // printf("Enviando mensagem UDP: %s\n", udp_message); // Mostra a mensagem que será enviada
+    // printf("echo: %s\n", udp_message); // Mostra a resposta recebida do servidor
 
-    // printf("Enviando mensagem UDP: %s\n", udp_message); // Debug: mostra a mensagem que será enviada
-
-    
-    // printf("echo: %s\n", udp_message); // Debug: mostra a resposta recebida do servidor
 }
 
 
@@ -245,7 +249,7 @@ struct addrinfo *udp_starter(char *regIP, char *regUDP) {
     if(fd_udp==-1)/*error*/exit(1);
 
     struct timeval read_timeout;
-    read_timeout.tv_sec = 10; // Espera no máximo 10 segundos pela resposta do professor
+    read_timeout.tv_sec = 10; // Espera no máximo 10 segundos pela resposta do servidor
     read_timeout.tv_usec = 0;
     
     if (setsockopt(fd_udp, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof(read_timeout)) < 0) {
@@ -272,7 +276,7 @@ struct addrinfo *udp_starter(char *regIP, char *regUDP) {
  * as arestas TCP existentes ou a lógica de roteamento (tabela dist/succ).
  *
  * - "l" : fecha todas as arestas e sai.
- * - "ae" / "dae" : cria/renova ligação TCP com nó remoto.
+ * - "ae" / "dae" : cria/renova ligação TCP com nó remoto ou localmente.
  * - "sg" / "em" : liga/desliga monitor de roteamento.
  * - "m" : envia mensagem CHAT via next-hop conhecido.
  * - "sr" : mostra estado de roteamento para destino.
@@ -294,15 +298,14 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
         }
         printf("Arestas locais fechadas (Leave).\n");
 
-
+    // chamamos função de conexão para comandos "ae" e "dae"
     } else if (strcmp(current_command->command, "ae") == 0 || strcmp(current_command->command, "dae") == 0) {
         
         connect_to_node(my_node, current_command);
-
-
+    
+    // usamos a estrutura local de fd_edges para mostrar as ligações ativas
+    // index de fd_edges com alguma coisa diferente de -1 é um vizinho ativo
     } else if(strcmp(current_command->command, "sg") == 0){
-        // usamos a estrutura local de fd_edges para mostrar as ligações ativas
-        // index de fd_edges com alguma coisa diferente de -1 é um vizinho ativo
         bool exists = false;
         printf("Vizinhos ativos:\n");
         for (int i = 0; i < 100; i++) {
@@ -315,7 +318,8 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
             printf("Nenhum vizinho ativo.\n");
         }
 
-
+    // se commando for "re" (remove edge), verificamos se a aresta existe, fechamos o socket e chamamos handle_link_drop
+    // para processar a queda da ligação no protocolo de encaminhamento
     } else if (strcmp(current_command->command, "re") == 0) {
         
         if (fd_edges[current_command->id] != INVALID_NUMBER) {
@@ -330,7 +334,7 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
             printf("Erro: Não existe aresta ativa com o nó %d.\n", current_command->id);
         }
 
-
+    // processamento de commando "a" (announce) para anunciar o nó na rede e iniciar o processo de construção de rotas
     } else if (strcmp(current_command->command, "a") == 0) {
         
         my_node->dist[my_node->id] = 0;
@@ -338,7 +342,8 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
 
         char announce_msg[32];
         sprintf(announce_msg, "ROUTE %d %d\n", my_node->id, 0);
-
+        
+        // Anunciar a rota para si mesmo a todos os vizinhos ativos
         for (int i = 0; i < 100; i++) {
             if (fd_edges[i] != INVALID_NUMBER) {
                 write(fd_edges[i], announce_msg, strlen(announce_msg));
@@ -348,20 +353,23 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
 
 
     } else if (strcmp(current_command->command, "sm") == 0) {
-        routing_monitor_active = true;
+        routing_monitor_active = true; // flag global ativada para monitorização de encaminhamento
         printf("Monitorização de encaminhamento ativada.\n");
 
 
     } else if (strcmp(current_command->command, "em") == 0) {
-        routing_monitor_active = false;
+        routing_monitor_active = false;// flag global desativada para monitorização de encaminhamento
         printf("Monitorização de encaminhamento desativada.\n");
 
-        
+    //NOTA: deviamos fazer aqui o mesmo que foi feita na receção de uma mensagem?
+    //se a ligação for perdida a meio do envio da mensagem, isto não pode dar erro? enviar msg para nó que não tem Ligações ativas?
+    // processamento do comando "m" (message) para enviar uma mensagem de chat para um destino específico usando o next-hop conhecido.
     } else if (strcmp(current_command->command, "m") == 0) {
         int dest = current_command->id;
         int next_hop;
         char chat_msg[160];
 
+        // graceful handling de erros comuns antes de tentar enviar a mensagem
         if (!my_node->is_registered) {
             printf("Erro: Não está registado. Não pode executar 'message'.\n");
             return;
@@ -372,11 +380,13 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
             return;
         }
 
+        // verificar se a mensagem é para si mesmo
         if (dest == my_node->id) {
             printf("Mensagem recebida do nó %d: %s\n", my_node->id, current_command->message);
             return;
         }
 
+        // impossivel mandar mensagem para um destino que não tem rota ativa
         if (my_node->state[dest] != 0 || my_node->dist[dest] == INFINITO) {
             printf("Erro: Não existe rota ativa para o nó %d.\n", dest);
             return;
@@ -388,13 +398,16 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
             return;
         }
 
+        // encaminhamento para destino pretendido usando o next-hop conhecido.
         snprintf(chat_msg, sizeof(chat_msg), "CHAT %d %d %s\n", my_node->id, dest, current_command->message);
         write(fd_edges[next_hop], chat_msg, strlen(chat_msg));
         printf("Mensagem enviada para o nó %d via nó %d.\n", dest, next_hop);
 
+    // processamento do comando "sr" (show route) para mostrar o estado de roteamento para um destino específico.
     } else if (strcmp(current_command->command, "sr") == 0) {
         int dest = current_command->id;
 
+        // graceful handling de erros comuns antes de tentar enviar a mensagem
         if (dest < 0 || dest >= 100) {
             printf("Erro: Destino inválido.\n");
             return;
