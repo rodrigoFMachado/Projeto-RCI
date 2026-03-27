@@ -550,7 +550,7 @@ void accept_connection(NodeState *my_node) {
     struct sockaddr addr;
     socklen_t addrlen = sizeof(addr);
     int vizinho_id;
-    char buffer[BUFFER_TCP_SIZE]; 
+    char buffer[128]; 
 
     int new_fd = accept(fd_tcp_listen, (struct sockaddr*)&addr, &addrlen);
     if (new_fd == -1) return;
@@ -561,7 +561,7 @@ void accept_connection(NodeState *my_node) {
     // ler tcp até /n
     // ler byte a byte até encontrar "\n", para garantir que se todos os dados não chegarem de uma vez ou se ligação fosse fechada,
     // não ficamos com lixo no buffer ou a ler dados incompletos
-    while (total_bytes < BUFFER_TCP_SIZE - 1) {
+    while (total_bytes < 128 - 1) {
         
         // Ler 1 byte de cada vez para o buffer
         bytes_read = read(new_fd, buffer + total_bytes, 1); 

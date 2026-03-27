@@ -146,25 +146,7 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
         for (int i = 0; i < 100; i++) {
             if (fd_edges[i] != INVALID_NUMBER && FD_ISSET(fd_edges[i], &rfds)) {
                 
-                char buffer[2*BUFFER_TCP_SIZE];  // mensagem total (+que 128)
-                int bytes = read(fd_edges[i], buffer, sizeof(buffer) - 1);
-
-                if (bytes <= 0) { 
-                    // Se bytes == 0, o vizinho desligou-se normalmente (remove edge ou exit).
-                    // Se bytes == -1, a ligação caiu de forma bruta.
-                    printf("O nó %d desconectou-se (aresta removida).\n", i);
-
-                    int dropped_neighbor = fd_edges[i]; // Guardar o socket do vizinho
-                    fd_edges[i] = INVALID_NUMBER; // Limpamos a aresta do nosso lado
-                    handle_link_drop(my_node, i); // Processar a queda da ligação no protocolo de encaminhamento
-
-                    close(dropped_neighbor); // Fechar o socket da ligação caída;
-
-                } else {
-                    // Recebemos texto do vizinho!
-                    buffer[bytes] = '\0';
-                    process_tcp_message(my_node, current_command, i, buffer);
-                }
+                process_tcp_message(my_node, current_command, i);
             }
         }
     }
