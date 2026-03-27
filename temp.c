@@ -289,7 +289,8 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
 
     if (strcmp(current_command->command, "l") == 0) {
 
-        // O nó vai sair da rede. Não há roteamento a fazer, apenas fechar portas.
+        // O nó vai sair da rede. Cada ligação deve passar pelo mesmo tratamento
+        // de queda para manter o estado de encaminhamento consistente.
         for(int i = 0; i < 100; i++) {
             if(fd_edges[i] != INVALID_NUMBER) {
                 int dropped_fd = fd_edges[i];
@@ -551,7 +552,7 @@ void accept_connection(NodeState *my_node) {
     struct sockaddr addr;
     socklen_t addrlen = sizeof(addr);
     int vizinho_id;
-    char buffer[128]; 
+    char buffer[BUFFER_TCP_SIZE]; 
 
     int new_fd = accept(fd_tcp_listen, (struct sockaddr*)&addr, &addrlen);
     if (new_fd == -1) return;
@@ -562,7 +563,7 @@ void accept_connection(NodeState *my_node) {
     // ler tcp até /n
     // ler byte a byte até encontrar "\n", para garantir que se todos os dados não chegarem de uma vez ou se ligação fosse fechada,
     // não ficamos com lixo no buffer ou a ler dados incompletos
-    while (total_bytes < 128 - 1) {
+    while (total_bytes < BUFFER_TCP_SIZE - 1) {
         
         // Ler 1 byte de cada vez para o buffer
         bytes_read = read(new_fd, buffer + total_bytes, 1); 

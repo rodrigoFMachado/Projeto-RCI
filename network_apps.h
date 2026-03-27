@@ -2,7 +2,7 @@
 #define NETWORK_APPS_H
 
 
-void process_tcp_message(NodeState *my_node, ParsedCommand *current_command, int neighbor_id, char *raw_tcp_message);
+void process_tcp_message(NodeState *my_node, ParsedCommand *current_command, int neighbor_id);
 
 void handle_link_drop(NodeState *my_node, int dropped_neighbor);
 
