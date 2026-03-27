@@ -26,7 +26,19 @@ bool routing_monitor_active = false; // Por omissão, as mensagens de encaminham
 bool word_processor(NodeState *my_node, ParsedCommand *current_command); 
 
 
-
+/**
+ * @brief Controlador principal do nó P2P: gerencia sockets UDP/TCP, processa comandos e roteia mensagens.
+ *
+ * Inicializa o nó com estado vazio, cria sockets UDP e TCP para comunicação com servidor
+ * e vizinhos. Usa `select()` para monitorizar simultaneamente: input do teclado, conexões
+ * TCP de entrada e mensagens de vizinhos. Suporta ciclo de vida completo: join -> add edges
+ * -> mensagens -> leave -> exit.
+ *
+ * @param myIP endereço local para bind do socket TCP de escuta.
+ * @param myTCP porta TCP local do nó para aceitar conexões.
+ * @param regIP endereço do servidor de registro (UDP central).
+ * @param regUDP porta UDP do servidor de registro.
+ */
 void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
     int counter, maxfd;
     bool exit_failure;
@@ -177,6 +189,32 @@ void manager_of_all(char *myIP, char *myTCP, char *regIP, char *regUDP) {
 
 
 
+/**
+ * @brief Parser de comandos digitados pelo utilizador: valida sintaxe e extrai parâmetros.
+ *
+ * Função faz a validação de um comando e lida com erros graciosamente, imprimindo mensagens
+ * de erro claras e retornando true para sinalizar que o comando não deve ser processado.
+ *
+ * Le uma linha do stdin com `fgets()` e identifica o comando ("j", "ae", "m", etc).
+ * Valida argumentos esperados usando `sscanf()`. Se a sintaxe for correta, atualiza
+ * `current_command` e retorna false. Se comando desconhecido ou argumentos inválidos,
+ * imprime erro e retorna true (sinaliza skip próximo processamento).
+ *
+ * Comandos suportados:
+ *   - "j net id": join (registo no servidor)
+ *   - "l": leave (sair da rede)
+ *   - "x": exit (encerrar aplicação)
+ *   - "ae id": add edge (criar ligação TCP)
+ *   - "re id": remove edge (fechar ligação TCP)
+ *   - "m dest msg": message (enviar CHAT)
+ *   - "sr dest": show routing (mostrar rota para destino)
+ *   - "dj net id": direct join (criar nó sem servidor)
+ *   - "dae id ip port": direct add edge (conectar sem servidor)
+ *
+ * @param my_node estado local do nó (usado para validações).
+ * @param current_command estrutura preenchida com comando parseado.
+ * @return true se erro ou comando vazio, false em sucesso (comando válido parseado).
+ */
 bool word_processor(NodeState *my_node, ParsedCommand *current_command) {
     char buffer_teclado[64] = {0}; // Buffer para ler a linha do teclado
 
@@ -362,6 +400,19 @@ bool word_processor(NodeState *my_node, ParsedCommand *current_command) {
 }
 
 
+/**
+ * @brief Parser de argumentos da linha de comandos.
+ *
+ * Valida numero de argumentos e atribui endereços/portas a pointers passados
+ *
+ * @param argc número de argumentos da linha de comandos.
+ * @param argv array de strings com argumentos.
+ * @param myIP pointer a preencher com IP local do nó.
+ * @param myTCP pointer a preencher com porta TCP local.
+ * @param regIP pointer a preencher com IP do servidor de registro (ou default).
+ * @param regUDP pointer a preencher com porta UDP do servidor (ou default).
+ * @return 0 em sucesso, exit(1) se argumentos inválidos.
+ */
 int interface(int argc, char *argv[], char **myIP, char **myTCP, char **regIP, char **regUDP) 
 {
     if (argc < 3 || argc > 5) {
