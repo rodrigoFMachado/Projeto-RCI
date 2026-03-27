@@ -2,8 +2,6 @@
 #define COMMUNICATION_HANDLING_H
 
 
-#define BUFFER_TCP_SIZE 128
-
 
 bool handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP); 
 

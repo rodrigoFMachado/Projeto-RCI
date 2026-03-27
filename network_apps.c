@@ -39,51 +39,75 @@ bool coord_finished_for_dest(NodeState *my_node, int dest) {
 /// @param current_command 
 /// @param neighbor_id 
 /// @param raw_tcp_message 
-void process_tcp_message(NodeState *my_node, ParsedCommand *current_command, int neighbor_id, char *raw_tcp_message) {
+void process_tcp_message(NodeState *my_node, ParsedCommand *current_command, int neighbor_id) {
+
+    char buffer[2* 128]; // mensagem total da mensagem (+que 128)
+
+    int total_bytes = 0;
+    int bytes_read;
+
     int origin, dest, distance;
-    char *saveptr; 
 
-    // A primeira chamada ao strtok_r corta a primeira fatia até ao primeiro '\n'
-    char *line = strtok_r(raw_tcp_message, "\n", &saveptr);
+    while (total_bytes < (2 * 128 - 1)) {
+        bytes_read = read(fd_edges[neighbor_id], buffer + total_bytes, 1);
 
-    
-    while (line != NULL) {
+        if (bytes_read <= 0) {
+            // Se bytes == 0, o vizinho desligou-se normalmente (remove edge ou exit).
+            // Se bytes == -1, a ligação caiu de forma bruta.
+            printf("O nó %d desconectou-se (aresta removida).\n", neighbor_id);
 
-        if (sscanf(line, "ROUTE %d %d", &dest, &distance) == 2) {
-            if (routing_monitor_active) {
-                printf("[RECEIVED] %s\n", line);
-            }
-            process_ROUTE(my_node, neighbor_id, dest, distance);
-    
+            int dropped_neighbor = fd_edges[neighbor_id]; // Guardar o socket do vizinho
+            fd_edges[neighbor_id] = INVALID_NUMBER;       // Limpamos a aresta do nosso lado
+            handle_link_drop(my_node, neighbor_id);       // Processar a queda da ligação no protocolo de encaminhamento
 
-        } else if (sscanf(line, "COORD %d", &dest) == 1) {
-            if (routing_monitor_active) {
-                printf("[RECEIVED] %s\n", line);
-            }
-            process_COORD(my_node, neighbor_id, dest);
-       
+            close(dropped_neighbor); // Fechar o socket da ligação caída;
 
-        } else if (sscanf(line, "UNCOORD %d", &dest) == 1) {
-            if (routing_monitor_active) {
-                printf("[RECEIVED] %s\n", line);
-            }
-            process_UNCOORD(my_node, neighbor_id, dest);
-
-        // O guião diz que a mensagem de CHAT tem no máximo 128 caracteres (le frases com espacos)
-        } else if (sscanf(line, "CHAT %d %d %128[^\n]", &origin, &dest, current_command->message) == 3) {
-            if (routing_monitor_active) {
-                printf("[RECEIVED] %s\n", line);
-            }
-            process_CHAT(my_node, neighbor_id, origin, dest, current_command->message);
-
-        } else if (strcmp(line, "") != 0) {
-            // Só imprime aviso se a linha não for puramente vazia
-            printf("Aviso: Mensagem TCP mal formatada recebida do nó %d: %s\n", neighbor_id, line);
+            return;
         }
 
-        // Pedimos ao strtok_r a PRÓXIMA fatia do mesmo buffer original
-        line = strtok_r(NULL, "\n", &saveptr);
+        total_bytes += bytes_read;
+
+        if (buffer[total_bytes - 1] == '\n') {
+            break; // Saímos do ciclo de leitura
+        }
+        
+        
     }
+
+    buffer[total_bytes] = '\0'; // Fechamos a string em C    
+
+    if (sscanf(buffer, "ROUTE %d %d", &dest, &distance) == 2) {
+        if (routing_monitor_active) {
+            printf("[RECEIVED] %s\n", buffer);
+        }
+        process_ROUTE(my_node, neighbor_id, dest, distance);
+
+
+    } else if (sscanf(buffer, "COORD %d", &dest) == 1) {
+        if (routing_monitor_active) {
+            printf("[RECEIVED] %s\n", buffer);
+        }
+        process_COORD(my_node, neighbor_id, dest);
+    
+
+    } else if (sscanf(buffer, "UNCOORD %d", &dest) == 1) {
+        if (routing_monitor_active) {
+            printf("[RECEIVED] %s\n", buffer);
+        }
+        process_UNCOORD(my_node, neighbor_id, dest);
+
+    // O guião diz que a mensagem de CHAT tem no máximo 128 caracteres (le frases com espacos)
+    } else if (sscanf(buffer, "CHAT %d %d %128[^\n]", &origin, &dest, current_command->message) == 3) {
+        if (routing_monitor_active) {
+            printf("[RECEIVED] %s\n", buffer);
+        }
+        process_CHAT(my_node, neighbor_id, origin, dest, current_command->message);
+
+    } else if (strcmp(buffer, "") != 0) {
+        // Só imprime aviso se a linha não for puramente vazia
+        printf("Aviso: Mensagem TCP mal formatada recebida do nó %d: %s\n", neighbor_id, buffer);
+    }
+    return;
 }
 
 
@@ -92,11 +116,6 @@ void process_ROUTE(NodeState *my_node, int neighbor_id, int dest, int distance) 
 
     // Se o destino sou eu próprio, a minha distância é sempre 0, ignoro o que me tentam ensinar.
     if (dest == my_node->id) {
-        return;
-    }
-
-    // quando em coord, nao propaga rotas
-    if (my_node->state[dest]) {
         return;
     }
     
@@ -130,6 +149,12 @@ void process_COORD(NodeState *my_node, int neighbor_id, int dest) {
 
     // Se state[t] = 1, então envia (exped, t) a j
     if (my_node->state[dest] == 1) {
+        // Se a mensagem COORD vem do vizinho que nos tinha dado a rota "secreta", invalidar
+        if (neighbor_id == my_node->succ[dest]) {
+            my_node->dist[dest] = INFINITO;
+            my_node->succ[dest] = INVALID_NUMBER;
+        }
+
         snprintf(msg_to_send, sizeof(msg_to_send), "UNCOORD %d\n", dest);
         write(fd_edges[neighbor_id], msg_to_send, strlen(msg_to_send));
         if(routing_monitor_active) {
@@ -260,9 +285,6 @@ void process_CHAT(NodeState *my_node, int neighbor_id, int origin, int dest, con
     snprintf(chat_msg, sizeof(chat_msg), "CHAT %d %d %s\n", origin, dest, message);
     write(fd_edges[next_hop], chat_msg, strlen(chat_msg));
 
-    if (routing_monitor_active) {
-        printf("[SENT] %s", chat_msg);
-    }
 }
 
 void handle_link_drop(NodeState *my_node, int dropped_neighbor) {
@@ -311,6 +333,9 @@ void handle_link_drop(NodeState *my_node, int dropped_neighbor) {
                 if (fd_edges[i] != INVALID_NUMBER) {
                     my_node->coord[dest][i] = 1; 
                     write(fd_edges[i], msg_to_send, strlen(msg_to_send));
+                    if (routing_monitor_active) {
+                        printf("[SENT] %s", msg_to_send);
+                    }
                 } else {
                     my_node->coord[dest][i] = 0; 
                 }
@@ -326,6 +351,11 @@ void handle_link_drop(NodeState *my_node, int dropped_neighbor) {
                 my_node->succ_coord[dest] = INVALID_NUMBER; // esquecer sucessor que nos mandou coord
             }
 
+            if (my_node->succ[dest] == dropped_neighbor) {
+                my_node->dist[dest] = INFINITO;
+                my_node->succ[dest] = INVALID_NUMBER;
+            }
+
             // Verificar se coord acabou
             if (coord_finished_for_dest(my_node, dest)) {
                 
@@ -338,6 +368,9 @@ void handle_link_drop(NodeState *my_node, int dropped_neighbor) {
                     for (int i = 0; i < 100; i++) {
                         if (fd_edges[i] != INVALID_NUMBER) {
                             write(fd_edges[i], msg_to_send, strlen(msg_to_send));
+                            if (routing_monitor_active) {
+                                printf("[SENT] %s", msg_to_send);
+                            }
                         }
                     }
                 }
@@ -346,6 +379,9 @@ void handle_link_drop(NodeState *my_node, int dropped_neighbor) {
                 if (my_node->succ_coord[dest] != INVALID_NUMBER) {
                     snprintf(msg_to_send, sizeof(msg_to_send), "UNCOORD %d\n", dest);
                     write(fd_edges[my_node->succ_coord[dest]], msg_to_send, strlen(msg_to_send));
+                    if (routing_monitor_active) {
+                        printf("[SENT] %s", msg_to_send);
+                    }
                     my_node->succ_coord[dest] = INVALID_NUMBER; 
                 }
             }
