@@ -309,27 +309,19 @@ bool word_processor(NodeState *my_node, ParsedCommand *current_command) {
 
             // Verificar start monitor 
             else if (strcmp(command_first_w, "sm") == 0) {
-                // usado id para capturar nó de destino
                 if (sscanf(buffer_teclado, "%*s") != 0) {
                     printf("Erro: Argumentos inválidos. Uso: start monitor\n");
                     return true; 
                 }
-                routing_monitor_active = true;
-                printf("Monitorização de encaminhamento ativada.\n");
-
                 strcpy(current_command->command, "sm");
             }
 
             // Verificar end monitor 
             else if (strcmp(command_first_w, "em") == 0) {
-                // usado id para capturar nó de destino
                 if (sscanf(buffer_teclado, "%*s") != 0) {
                     printf("Erro: Argumentos inválidos. Uso: end monitor\n");
                     return true; 
                 }
-                routing_monitor_active = false;
-                printf("Monitorização de encaminhamento desativada.\n");
-
                 strcpy(current_command->command, "em");
             }
 
