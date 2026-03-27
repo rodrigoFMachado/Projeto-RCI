@@ -39,11 +39,24 @@
 
 
 
-/// @brief Processa o comando do usuário, constrói a mensagem UDP adequada, envia para o servidor e trata a resposta.
-/// @param my_node - Contém estado atual do nó, registado(?), net, id, etc
-/// @param current_command - Contém o comando processado do usuário, com os campos preenchidos (command, net, id, etc)
-/// @param myIP - Endereço IP do nó
-/// @param myTCP - Porta TCP do nó
+/**
+ * @brief Processa um comando do cliente e envia pedidos UDP para o servidor central de registo.
+ *
+ * Suporta os comandos:
+ *   - "j" (join): regista o nó na rede e pede lista de nós ao servidor.
+ *   - "l" (leave): remove o registo do nó.
+ *   - "n" (nodes): consulta lista de nós na rede.
+ *   - "ae" (add edge): consulta endereço TCP de outro nó para ligar-se.
+ *
+ * Esta função constrói mensagens de pedido usando opcodes e TID, envia via UDP
+ * com `send_and_receiveUDP` e interpreta a resposta para atualizar `my_node`.
+ *
+ * @param my_node      estado local do nó com dados de registro e roteamento.
+ * @param current_command comando parseado com atributos command/net/id/message.
+ * @param myIP         endereço IPv4 local usado no registo (UDP REG).
+ * @param myTCP        porta TCP local usada no registo (UDP REG).
+ * @return true em caso de erro lógico ou comando inválido, false em sucesso.
+ */
 bool handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, char *myIP, char *myTCP) {
     int tid = rand() % 1000; // Gerar um TID aleatório entre 0 e 999
 
@@ -60,9 +73,7 @@ bool handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, cha
 
         snprintf(udp_message, sizeof(udp_message), "%s %03d %d %03d %02d %s %s", UDP_REG, tid, OP_REG_REQ, current_command->net, current_command->id, myIP, myTCP);
 
-
         send_and_receiveUDP(udp_message); // Envia a mensagem e espera pela resposta do servidor
-
 
         if (sscanf(udp_message, "%*s %d %d", &received_tid, &received_op) >= 2) {
             if (received_tid == tid) {
@@ -172,8 +183,16 @@ bool handle_udp_commands(NodeState *my_node, ParsedCommand *current_command, cha
 }
 
 
-/// @brief Função bloqueante que envia e recebe a mensagem UDP
-/// @param udp_message
+/**
+ * @brief Envias e recebe um pacote UDP de/para o servidor de registro em loop de retransmissão.
+ *
+ * Comportamento:
+ * - envia a mesma mensagem até 2 tentativas.
+ * - faz timeout usando SO_RCVTIMEO configurado em `udp_starter`.
+ * - recebe a resposta e atualiza o buffer `udp_message` com o payload recebido.
+ *
+ * @param udp_message buffer com mensagem de pedido, que também recebe a resposta.
+ */
 void send_and_receiveUDP(char *udp_message) {
     int n;
 
@@ -208,7 +227,16 @@ void send_and_receiveUDP(char *udp_message) {
 }
 
 
-/// @brief Cria o FD UDP, e a estrutura que contém informação do endereço UDP, que ficará numa variável global
+/**
+ * @brief Inicializa socket UDP para comunicação com o servidor de registro.
+ *
+ * Cria o socket, ajusta timeout de recepção com `setsockopt(SO_RCVTIMEO)` e
+ * resolve o `regIP:regUDP` com getaddrinfo.
+ *
+ * @param regIP  Endereço do registo (servidor central) em IPv4.
+ * @param regUDP Porta UDP do servidor de registo.
+ * @return ponteiro para struct addrinfo preenchida, usado em sendto/recvfrom.
+ */
 struct addrinfo *udp_starter(char *regIP, char *regUDP) { 
     struct addrinfo hints, *address;
     int errcode;
@@ -237,6 +265,21 @@ struct addrinfo *udp_starter(char *regIP, char *regUDP) {
 }
 
 
+/**
+ * @brief Interpreta e executa comandos de nível de conexão TCP e roteamento entre vizinhos.
+ *
+ * Esta rotina é chamada quando o nó envia comandos internos que afetam
+ * as arestas TCP existentes ou a lógica de roteamento (tabela dist/succ).
+ *
+ * - "l" : fecha todas as arestas e sai.
+ * - "ae" / "dae" : cria/renova ligação TCP com nó remoto.
+ * - "sg" / "em" : liga/desliga monitor de roteamento.
+ * - "m" : envia mensagem CHAT via next-hop conhecido.
+ * - "sr" : mostra estado de roteamento para destino.
+ *
+ * @param my_node estado local do nó (tabela de distâncias, sucessores, etc).
+ * @param current_command comando parseado contendo `id`, `message`, etc.
+ */
 void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
 
 
@@ -405,6 +448,15 @@ void handle_tcp_commands(NodeState *my_node, ParsedCommand *current_command) {
 }
 
 
+/**
+ * @brief Envia rotas conhecidas ao novo vizinho TCP.
+ *
+ * Quando uma aresta TCP é estabelecida com `new_neighbor_id`, suportamos
+ * sincronização inicial enviando todas as rotas válidas na tabela local.
+ *
+ * @param my_node estado local do nó com dist/succ/coord.
+ * @param new_neighbor_id ID do novo vizinho estabelecido em fd_edges.
+ */
 void sync_new_neighbor(NodeState *my_node, int new_neighbor_id) {
     char route_msg[32];
 
@@ -426,6 +478,19 @@ void sync_new_neighbor(NodeState *my_node, int new_neighbor_id) {
 }
 
 
+/**
+ * @brief Estabelece ligação TCP ativa ao nó remoto e anuncia identidade via protocolo NEIGHBOR.
+ *
+ * Fluxo:
+ * 1. Resolve o IP/porta TCP obtidos via consulta UDP de CONTACT.
+ * 2. Connect no socket (TCP handshake)
+ * 3. Salva `fd_out` em fd_edges[id]
+ * 4. Envia "NEIGHBOR %02d\n" para notificar o vizinho do ID local.
+ * 5. Chama sync_new_neighbor para enviar rotas de atualização inicial.
+ *
+ * @param my_node estado local contendo id e tabela de roteamento.
+ * @param current_command contém `tempTCP_IP`/`tempTCP_Port`/`id`.
+ */
 void connect_to_node(NodeState *my_node, ParsedCommand *current_command) {
     int fd_out = socket(AF_INET, SOCK_STREAM, 0);
     
@@ -459,6 +524,15 @@ void connect_to_node(NodeState *my_node, ParsedCommand *current_command) {
 }
 
 
+/**
+ * @brief Aceita uma nova conexão TCP de entrada e valida o handshake NEIGHBOR.
+ *
+ * O nó entra em modo não-blocking nesta função, aceita a conexão de `fd_tcp_listen`
+ * e lê linha terminada em \n para obter o ID do vizinho. Esta abordagem evita
+ * processar pacotes TCP parcialmente recebidos.
+ *
+ * @param my_node estado local para atualizar fd_edges e sincronizar rotas.
+ */
 void accept_connection(NodeState *my_node) {
     struct sockaddr addr;
     socklen_t addrlen = sizeof(addr);
@@ -472,6 +546,8 @@ void accept_connection(NodeState *my_node) {
     int bytes_read;
 
     // ler tcp até /n
+    // ler byte a byte até encontrar "\n", para garantir que se todos os dados não chegarem de uma vez ou se ligação fosse fechada,
+    // não ficamos com lixo no buffer ou a ler dados incompletos
     while (total_bytes < BUFFER_TCP_SIZE - 1) {
         
         // Ler 1 byte de cada vez para o buffer
@@ -507,7 +583,15 @@ void accept_connection(NodeState *my_node) {
 }
 
 
-/// @brief Cria o FD TCP de escuta, e efetua o bind e listen com a porta fornecida pelo utilizador
+/**
+ * @brief Inicializa o socket TCP local de escuta e faz bind/listen.
+ *
+ * Este socket recebe conexões de novos vizinhos P2P
+ * que se ligam pelo comando "ae".
+ *
+ * @param myIP Endereço local/INADDR_ANY (IPv4) para bind.
+ * @param myTCP Porta TCP para bind/listen.
+ */
 void tcp_starter(char *myIP, char *myTCP) {
     struct addrinfo hints, *address;
     int errcode;
